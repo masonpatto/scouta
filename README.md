@@ -1,22 +1,11 @@
-# Scouta
+# Sample Snack app
 
-A React Native (Expo) app for scouting and trading football (soccer) player cards. Players take a personality-driven quiz to get a scout archetype, earn virtual capital, then buy, hold, and sell player cards on a leaderboard against other users.
+Open the `App.js` file to start writing some code. You can preview the changes directly on your phone or tablet by scanning the **QR code** or use the iOS or Android emulators. When you're done, click **Save** and share the link!
 
-## Stack
+When you're ready to see everything that Expo provides (or if you want to use your own editor) you can **Download** your project and use it with [expo cli](https://docs.expo.dev/get-started/installation/#expo-cli)).
 
-- **Expo / React Native** (`expo` ~54, `react-native` 0.81, `react` 19)
-- **Supabase** for auth and data, called directly via `fetch` (no SDK) — see `SUPABASE_URL` / `SUPABASE_ANON_KEY` at the top of `App.js`
-- Single-file app: all screens and logic currently live in `App.js`, driven by local component state (no navigation library yet)
+All projects created in Snack are publicly available, so you can easily share the link to this project via link, or embed it on a web page with the `<>` button.
 
-## Running locally
+If you're having problems, you can tweet to us [@expo](https://twitter.com/expo) or ask in our [forums](https://forums.expo.dev/c/expo-dev-tools/61) or [Discord](https://chat.expo.dev/).
 
-```
-npm install
-npm start        # then press i / a / w, or scan the QR code with Expo Go
-```
-
-## Structure
-
-- `App.js` — entire app: auth, onboarding quiz, home/discover/portfolio/leaderboard tabs, player cards, capital/coin reveal animation
-- `components/` — shared components
-- `assets/` — app icons/splash (most in-app imagery, like the wordmark, blobs, and tier badges, is embedded as base64 data URIs directly in `App.js`)
+Snack is Open Source. You can find the code on the [GitHub repo](https://github.com/expo/snack).
