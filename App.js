@@ -5,7 +5,6 @@ import {
   Modal,
 } from 'react-native';
 import * as Font from 'expo-font';
-import * as SecureStore from 'expo-secure-store';
 
 // ---------- Talking to Supabase Auth directly via fetch, no SDK needed ----------
 const SUPABASE_URL = 'https://eqflsykuoyuzbcixayjl.supabase.co';
@@ -212,19 +211,20 @@ async function revokeSession(accessToken) {
 }
 // ---------- End direct REST auth ----------
 
-// ---------- Session persistence (expo-secure-store) ----------
-// Stored as separate small keys rather than one JSON blob, since some
-// SecureStore backends historically cap individual value size.
-const SESSION_KEYS = {
-  access: 'scouta_access_token',
-  refresh: 'scouta_refresh_token',
-  expiresAt: 'scouta_expires_at',
-  user: 'scouta_user',
-};
+// ---------- Session persistence ----------
+// TEMPORARILY DISABLED: real persistence (expo-secure-store) needs a
+// dependency added in Snack, which isn't reachable from Snack's mobile
+// UI. Stubbed out to no-ops for now so the app runs with zero new
+// dependencies -- sessions won't survive closing the app until this is
+// restored (matches original pre-persistence behavior). The token
+// refresh logic below still works fine within a single app session; only
+// cross-restart persistence is affected. To restore: add expo-secure-store
+// as a dependency and reinstate the SecureStore-backed versions of these
+// three functions (see git history on this file).
 
 // Supabase's token response gives expires_in (seconds from now); normalize
-// to an absolute ms timestamp so persisted sessions can be checked for
-// expiry without re-deriving it from the moment they were issued.
+// to an absolute ms timestamp so a session can be checked for expiry
+// without re-deriving it from the moment it was issued.
 function normalizeAuthResult(raw) {
   const expiresAt = raw.expires_at
     ? raw.expires_at * 1000
@@ -238,44 +238,15 @@ function normalizeAuthResult(raw) {
 }
 
 async function persistSession(session) {
-  try {
-    await Promise.all([
-      SecureStore.setItemAsync(SESSION_KEYS.access, session.access_token),
-      SecureStore.setItemAsync(SESSION_KEYS.refresh, session.refresh_token),
-      SecureStore.setItemAsync(SESSION_KEYS.expiresAt, String(session.expires_at)),
-      SecureStore.setItemAsync(SESSION_KEYS.user, JSON.stringify(session.user || {})),
-    ]);
-  } catch (e) {
-    // Non-fatal - worst case the user has to log in again next launch.
-  }
+  // no-op for now - see note above
 }
 
 async function loadPersistedSession() {
-  try {
-    const [access, refresh, expiresAt, userRaw] = await Promise.all([
-      SecureStore.getItemAsync(SESSION_KEYS.access),
-      SecureStore.getItemAsync(SESSION_KEYS.refresh),
-      SecureStore.getItemAsync(SESSION_KEYS.expiresAt),
-      SecureStore.getItemAsync(SESSION_KEYS.user),
-    ]);
-    if (!access || !refresh) return null;
-    return {
-      access_token: access,
-      refresh_token: refresh,
-      expires_at: Number(expiresAt) || 0,
-      user: userRaw ? JSON.parse(userRaw) : null,
-    };
-  } catch (e) {
-    return null;
-  }
+  return null; // no-op for now - see note above
 }
 
 async function clearPersistedSession() {
-  try {
-    await Promise.all(Object.values(SESSION_KEYS).map((k) => SecureStore.deleteItemAsync(k)));
-  } catch (e) {
-    // ignore
-  }
+  // no-op for now - see note above
 }
 // ---------- End session persistence ----------
 
@@ -466,9 +437,11 @@ export default function App() {
   // Typewriter intro effect is added right after onboardingStep is declared,
   // further down -- can't reference it here, it's not defined yet at this point.
 
-  // Session is persisted via expo-secure-store (see persistSession/
-  // loadPersistedSession above) and silently restored + refreshed on
-  // launch below, so closing the app no longer logs the user out.
+  // NOTE: cross-restart persistence is temporarily disabled (see the
+  // no-op persistSession/loadPersistedSession/clearPersistedSession
+  // above) -- closing the app currently logs the user out again, same
+  // as before this session's changes. Token refresh during a single
+  // app session still works below.
   const [session, setSession] = useState(null);
   const [sessionRestoring, setSessionRestoring] = useState(true);
   const [showStandaloneLogin, setShowStandaloneLogin] = useState(false);
