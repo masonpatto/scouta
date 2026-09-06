@@ -32,9 +32,37 @@ const HARD_CAP_PCT = 15; // absolute daily cap, both directions
 const MIN_MOVE_PCT = 0.05; // ignore noise below this; leave price untouched
 const CONCURRENCY = 20; // parallel RPC calls per batch
 
+const MIN_MINUTES_FOR_RATE = 270; // ~3 full matches, before trusting a per-90 rate
+const POTENTIAL_XGI_PER90_CEILING = 0.6; // roughly elite attacking output/90, used to normalize to 0-1
+
 function num(v: unknown): number {
   const n = typeof v === "string" ? parseFloat(v) : (v as number);
   return Number.isFinite(n) ? n : 0;
+}
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+// Potential is a scouting/opportunity signal, distinct from `rating`
+// (reputation) and never an input to price. v1 heuristic: younger
+// players score higher (more career ahead), blended with either their
+// actual underlying attacking output per 90 minutes (once there's
+// enough sample to trust a rate) or, for players without enough
+// minutes yet, their existing rating as a reputation proxy. Reasoned,
+// not empirically validated -- expect to revisit.
+function computePotential(age: number | null, totalMinutes: number, totalXgi: number, rating: number | null): number | null {
+  if (age === null && rating === null) return null;
+  const ageFactor = age === null ? 0.5 : clamp((28 - age) / 14, 0, 1);
+
+  if (totalMinutes >= MIN_MINUTES_FOR_RATE) {
+    const per90 = (totalXgi / totalMinutes) * 90;
+    const underlyingFactor = clamp(per90 / POTENTIAL_XGI_PER90_CEILING, 0, 1);
+    return Math.round((0.5 * ageFactor + 0.5 * underlyingFactor) * 100);
+  }
+
+  const ratingFactor = rating === null ? 0.5 : clamp(rating / 100, 0, 1);
+  return Math.round((0.6 * ageFactor + 0.4 * ratingFactor) * 100);
 }
 
 function injuryDoubtDelta(prevChance: number | null, newChance: number | null): number {
@@ -79,7 +107,7 @@ Deno.serve(async () => {
 
   const { data: existing, error: fetchErr } = await supabase
     .from("players")
-    .select("id, fpl_id, minutes, total_points, expected_goal_involvements, chance_of_playing_next_round, current_price")
+    .select("id, fpl_id, minutes, total_points, expected_goal_involvements, chance_of_playing_next_round, current_price, age, rating")
     .not("fpl_id", "is", null);
 
   if (fetchErr) {
@@ -135,6 +163,13 @@ Deno.serve(async () => {
       priceChanged++;
     }
 
+    const potential = computePotential(
+      row.age ?? null,
+      newMinutes,
+      newXgi,
+      row.rating ?? null
+    );
+
     jobs.push(async () => {
       const { error } = await supabase.rpc("apply_player_sync", {
         p_player_id: row.id,
@@ -150,6 +185,7 @@ Deno.serve(async () => {
         p_injury_note: el.news || null,
         p_new_price: newPrice,
         p_reason: reason,
+        p_potential: potential,
       });
       if (error) errors.push(`fpl_id ${el.id}: ${error.message}`);
     });

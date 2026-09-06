@@ -788,27 +788,16 @@ export default function App() {
     }
   }
 
-  // Real leaderboard - ranks actual signed-up users by cash_sc (a real,
-  // if simplified, proxy for portfolio strength; true total value would
-  // need summing every user's holdings too, which is a heavier query).
-  // NOTE: your profiles table has RLS enabled -- this only returns real
-  // results if the SELECT policy allows reading other users' rows, not
-  // just your own. If it's restricted to own-row-only, this will come
-  // back empty or with just your row, which the UI below handles openly
-  // rather than pretending there's a full leaderboard.
+  // Real leaderboard, ranked by ROI% via the get_leaderboard() RPC.
+  // profiles' own RLS only allows reading your own row, so a plain
+  // select against profiles can never show other users -- get_leaderboard
+  // is a SECURITY DEFINER function that returns only what a leaderboard
+  // needs (name, computed portfolio value, ROI%), never raw cash_sc.
   async function fetchLeaderboard() {
     setLeaderboardLoading(true);
     try {
-      const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/profiles?select=id,scout_name,cash_sc&order=cash_sc.desc&limit=20`,
-        { headers: authHeaders() }
-      );
-      const data = await res.json();
-      if (res.ok) {
-        setLeaderboard(Array.isArray(data) ? data : []);
-      } else {
-        setLeaderboard([]);
-      }
+      const data = await callRpc('get_leaderboard', { p_limit: 20 });
+      setLeaderboard(Array.isArray(data) ? data : []);
     } catch (e) {
       setLeaderboard([]);
     } finally {
@@ -1093,6 +1082,32 @@ export default function App() {
 
   function handleLogout() {
     logoutAndClearSession();
+  }
+
+  function handleDeleteAccount() {
+    Alert.alert(
+      'Delete your account?',
+      'This permanently deletes your profile, holdings, transaction history, and everything else tied to your account. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const result = await callRpc('delete_own_account', {});
+              if (!result.ok) {
+                Alert.alert('Could not delete account', result.reason || 'Something went wrong.');
+                return;
+              }
+              await logoutAndClearSession();
+            } catch (e) {
+              Alert.alert('Error', e.message);
+            }
+          },
+        },
+      ]
+    );
   }
 
   async function handleForgotPassword() {
@@ -1657,6 +1672,12 @@ export default function App() {
                     <Text style={[styles.ratingLabel, { color: tier.dim }]}>RTG</Text>
                   </View>
                 ) : null}
+                {item.potential !== null && item.potential !== undefined ? (
+                  <View style={[styles.ratingBadge, { marginLeft: 6 }]}>
+                    <Text style={[styles.ratingNumber, { color: tier.accent }]}>{item.potential}</Text>
+                    <Text style={[styles.ratingLabel, { color: tier.dim }]}>POT</Text>
+                  </View>
+                ) : null}
               </View>
             ) : null}
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -2104,24 +2125,30 @@ export default function App() {
                         // Real scatter plot, built from plain positioned
                         // Views -- no react-native-svg needed, a scatter
                         // plot is just dots at computed x/y positions.
-                        // The real mockup's axes are price vs a distinct
-                        // "potential" score we don't track; using rating
-                        // instead and labeling it honestly as such.
+                        // Uses the real per-player Potential field where
+                        // the market engine has computed one (currently
+                        // Premier League players only); falls back to
+                        // rating for players Potential hasn't reached yet,
+                        // rather than hiding them from the chart.
                         const plotW = 300, plotH = 180;
-                        const prices = players.map((p) => p.current_price || 0);
+                        const withY = players.map((p) => ({
+                          p,
+                          y: p.potential !== null && p.potential !== undefined ? p.potential : p.rating,
+                        })).filter((x) => x.y !== null && x.y !== undefined);
+                        const prices = withY.map((x) => x.p.current_price || 0);
                         const maxPrice = Math.max(...prices, 1);
-                        const minRating = 40, maxRating = 100;
+                        const minY = 0, maxY = 100;
                         return (
                           <View style={styles.scatterWrap}>
-                            <Text style={styles.homeSectionTitle}>Price vs Rating</Text>
-                            <Text style={styles.homeSectionSub}>Price on the X axis, scout rating on the Y</Text>
+                            <Text style={styles.homeSectionTitle}>Price vs Potential</Text>
+                            <Text style={styles.homeSectionSub}>Price on the X axis, Scout Potential on the Y (rating, where Potential isn't available yet)</Text>
                             <View style={styles.scatterPlot}>
-                              {players.map((p) => {
+                              {withY.map(({ p, y }) => {
                                 const x = ((p.current_price || 0) / maxPrice) * (plotW - 20) + 10;
-                                const ratingClamped = Math.max(minRating, Math.min(maxRating, p.rating || minRating));
-                                const y = plotH - 10 - ((ratingClamped - minRating) / (maxRating - minRating)) * (plotH - 20);
+                                const yClamped = Math.max(minY, Math.min(maxY, y));
+                                const py = plotH - 10 - ((yClamped - minY) / (maxY - minY)) * (plotH - 20);
                                 return (
-                                  <View key={p.id} style={[styles.scatterDot, { left: x - 5, top: y - 5 }]} />
+                                  <View key={p.id} style={[styles.scatterDot, { left: x - 5, top: py - 5 }]} />
                                 );
                               })}
                             </View>
@@ -2374,33 +2401,30 @@ export default function App() {
             {leaderboardLoading ? (
               <ActivityIndicator size="small" color="#161410" style={{ marginTop: 20 }} />
             ) : leaderboard.length === 0 ? (
-              <Text style={[styles.emptyText, { paddingHorizontal: 20 }]}>
-                No leaderboard data available right now — this needs your Supabase profiles table to
-                allow reading other users' rows (RLS), not just your own.
-              </Text>
+              <EmptyState icon="🏆" text="No leaderboard data yet — once scouts finish onboarding, they'll appear here." />
             ) : (
               <>
-                {leaderboard.length === 1 ? (
-                  <Text style={[styles.emptyText, { paddingHorizontal: 20, marginBottom: 12 }]}>
-                    Only your own account is visible right now — once other scouts sign up, they'll appear here too.
-                  </Text>
-                ) : null}
-                {leaderboard.map((p, i) => (
-                  <View key={p.id} style={[styles.lbRow, p.id === session.user.id && styles.lbRowMe]}>
-                    <Text style={styles.lbRank}>#{i + 1}</Text>
-                    <View style={styles.lbAvatar}>
-                      <Text style={styles.lbAvatarText}>
-                        {(p.scout_name || 'S').slice(0, 2).toUpperCase()}
+                {leaderboard.map((p, i) => {
+                  const positive = p.roi_pct >= 0;
+                  return (
+                    <View key={p.user_id} style={[styles.lbRow, p.user_id === session.user.id && styles.lbRowMe]}>
+                      <Text style={styles.lbRank}>#{i + 1}</Text>
+                      <View style={styles.lbAvatar}>
+                        <Text style={styles.lbAvatarText}>
+                          {(p.scout_name || 'S').slice(0, 2).toUpperCase()}
+                        </Text>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.lbName}>
+                          {p.scout_name || 'Unnamed Scout'}{p.user_id === session.user.id ? ' (You)' : ''}
+                        </Text>
+                      </View>
+                      <Text style={[styles.lbValue, { color: positive ? '#2f8f5b' : '#c1483f' }]}>
+                        {positive ? '+' : ''}{p.roi_pct}%
                       </Text>
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.lbName}>
-                        {p.scout_name || 'Unnamed Scout'}{p.id === session.user.id ? ' (You)' : ''}
-                      </Text>
-                    </View>
-                    <Text style={styles.lbValue}>{formatSC(p.cash_sc)}</Text>
-                  </View>
-                ))}
+                  );
+                })}
               </>
             )}
           </ScrollView>
@@ -2443,6 +2467,9 @@ export default function App() {
             </View>
             <TouchableOpacity style={[styles.buttonOutline, { marginHorizontal: 20 }]} onPress={handleLogout}>
               <Text style={styles.buttonOutlineText}>Log out</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={{ marginTop: 16, alignItems: 'center' }} onPress={handleDeleteAccount}>
+              <Text style={styles.logoutLink}>Delete my account</Text>
             </TouchableOpacity>
           </ScrollView>
         )}
