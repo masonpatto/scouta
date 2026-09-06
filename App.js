@@ -698,7 +698,9 @@ export default function App() {
   }, [onboardingStep]);
 
   const [holdings, setHoldings] = useState([]);
+  const [holdingsError, setHoldingsError] = useState('');
   const [transactions, setTransactions] = useState([]);
+  const [transactionsError, setTransactionsError] = useState('');
   const [watchlist, setWatchlist] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
@@ -821,28 +823,38 @@ export default function App() {
   }
 
   async function fetchHoldings() {
+    setHoldingsError('');
     try {
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/holdings?select=id,shares,avg_buy_price,thesis,players(id,name,current_price,position,club)`,
         { headers: authHeaders() }
       );
       const data = await res.json();
-      if (res.ok) setHoldings(data);
+      if (res.ok) {
+        setHoldings(data);
+      } else {
+        setHoldingsError(data.message || 'Could not load your holdings.');
+      }
     } catch (e) {
-      // non-fatal
+      setHoldingsError('Could not load your holdings — check your connection and try again.');
     }
   }
 
   async function fetchTransactions() {
+    setTransactionsError('');
     try {
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/transactions?select=*,players(name)&order=created_at.desc&limit=20`,
         { headers: authHeaders() }
       );
       const data = await res.json();
-      if (res.ok) setTransactions(data);
+      if (res.ok) {
+        setTransactions(data);
+      } else {
+        setTransactionsError(data.message || 'Could not load your transactions.');
+      }
     } catch (e) {
-      // non-fatal
+      setTransactionsError('Could not load your transactions — check your connection and try again.');
     }
   }
 
@@ -1641,11 +1653,16 @@ export default function App() {
       { key: 'profile', label: 'Profile' },
     ];
 
-    function EmptyState({ icon, text }) {
+    function EmptyState({ icon, text, onRetry }) {
       return (
         <View style={styles.emptyStateWrap}>
           <Text style={styles.emptyStateIcon}>{icon}</Text>
           <Text style={[styles.emptyText, { marginTop: 0 }]}>{text}</Text>
+          {onRetry ? (
+            <TouchableOpacity onPress={onRetry} style={{ marginTop: 12 }}>
+              <Text style={{ color: '#161410', fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' }}>Retry</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       );
     }
@@ -1946,7 +1963,9 @@ export default function App() {
             })()}
 
             <Text style={styles.sectionLabel}>Recent Activity</Text>
-            {transactions.length === 0 ? (
+            {transactionsError ? (
+              <EmptyState icon="⚠️" text={transactionsError} onRetry={fetchTransactions} />
+            ) : transactions.length === 0 ? (
               <EmptyState icon="📋" text="Nothing yet — buy your first player to get started." />
             ) : transactions.slice(0, 5).map((t) => (
               <View key={t.id} style={styles.txRow}>
@@ -2216,7 +2235,9 @@ export default function App() {
               <Text style={styles.pfAvailLabel}>Available Scout Coins</Text>
               <Text style={styles.pfAvailValue}>{cash !== null ? formatSC(cash) : '...'}</Text>
             </View>
-            {holdings.length === 0 ? (
+            {holdingsError ? (
+              <EmptyState icon="⚠️" text={holdingsError} onRetry={fetchHoldings} />
+            ) : holdings.length === 0 ? (
               <EmptyState icon="⚽️" text="No holdings yet — head to Discover to make your first pick." />
             ) : (() => {
               // Real computed data from actual holdings - no fabricated numbers.
