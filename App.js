@@ -751,6 +751,30 @@ export default function App() {
     };
   }
 
+  // Fire-and-forget basic analytics - never awaited, never blocks or
+  // fails the action it's attached to.
+  function logEventWithToken(accessToken, userId, event, props = {}) {
+    fetch(`${SUPABASE_URL}/rest/v1/analytics_events`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({ user_id: userId, event, props }),
+    }).catch(() => {});
+  }
+
+  // Convenience wrapper for the common case (current session). Takes the
+  // token/user id from the session closure, so it's not safe to call
+  // immediately after applySession() in the same tick -- state hasn't
+  // re-rendered yet. Use logEventWithToken directly there instead.
+  function logEvent(event, props = {}) {
+    if (!session) return;
+    logEventWithToken(session.access_token, session.user.id, event, props);
+  }
+
   async function completeOnboarding() {
     setOnboardingBusy(true);
     try {
@@ -768,6 +792,7 @@ export default function App() {
         return;
       }
       setOnboardingComplete(true);
+      logEvent('onboarding_complete', { mode: selectedMode || 'casual', archetype: finalIdentity.name });
     } catch (e) {
       Alert.alert('Error', e.message);
       setOnboardingBusy(false);
@@ -953,6 +978,7 @@ export default function App() {
             Alert.alert('Could not buy', result.reason);
           } else {
             Alert.alert('Bought', `Invested ${amount} SC in ${player.name}.`);
+            logEvent('buy_player', { player_id: player.id, amount });
             await Promise.all([fetchCash(), fetchHoldings(), fetchTransactions()]);
           }
         } catch (e) {
@@ -984,6 +1010,7 @@ export default function App() {
               ? `profit of ${result.realized_pl.toFixed(2)} SC`
               : `loss of ${Math.abs(result.realized_pl).toFixed(2)} SC`;
             Alert.alert('Sold', `Sold for a ${pl}.`);
+            logEvent('sell_player', { player_id: holding.players.id, shares, realized_pl: result.realized_pl });
             await Promise.all([fetchCash(), fetchHoldings(), fetchTransactions()]);
           }
         } catch (e) {
@@ -1109,6 +1136,7 @@ export default function App() {
       });
       applySession(normalizeAuthResult(result));
       setShowStandaloneLogin(false);
+      logEventWithToken(result.access_token, result.user.id, effectiveMode === 'signup' ? 'sign_up' : 'log_in');
       if (onboardingStep === 8) setOnboardingStep(9);
     } catch (e) {
       const msg = e.message.toLowerCase();
