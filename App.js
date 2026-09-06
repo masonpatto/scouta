@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, Alert, Image, ScrollView,
-  ActivityIndicator, SafeAreaView, KeyboardAvoidingView, Platform, Animated, RefreshControl,
+  ActivityIndicator, SafeAreaView, KeyboardAvoidingView, Platform, Animated, RefreshControl, AppState,
 } from 'react-native';
 import * as Font from 'expo-font';
+import * as SecureStore from 'expo-secure-store';
 
 // ---------- Talking to Supabase Auth directly via fetch, no SDK needed ----------
 const SUPABASE_URL = 'https://eqflsykuoyuzbcixayjl.supabase.co';
@@ -191,7 +192,91 @@ function signUp(email, password) {
 function signIn(email, password) {
   return supabaseAuthRequest('/token?grant_type=password', { email, password });
 }
+function requestPasswordReset(email) {
+  return supabaseAuthRequest('/recover', { email });
+}
+async function refreshAccessToken(refreshToken) {
+  return supabaseAuthRequest('/token?grant_type=refresh_token', { refresh_token: refreshToken });
+}
+async function revokeSession(accessToken) {
+  // Best-effort - a failed/expired-token revoke shouldn't block local logout.
+  try {
+    await fetch(`${SUPABASE_URL}/auth/v1/logout`, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${accessToken}` },
+    });
+  } catch (e) {
+    // ignore
+  }
+}
 // ---------- End direct REST auth ----------
+
+// ---------- Session persistence (expo-secure-store) ----------
+// Stored as separate small keys rather than one JSON blob, since some
+// SecureStore backends historically cap individual value size.
+const SESSION_KEYS = {
+  access: 'scouta_access_token',
+  refresh: 'scouta_refresh_token',
+  expiresAt: 'scouta_expires_at',
+  user: 'scouta_user',
+};
+
+// Supabase's token response gives expires_in (seconds from now); normalize
+// to an absolute ms timestamp so persisted sessions can be checked for
+// expiry without re-deriving it from the moment they were issued.
+function normalizeAuthResult(raw) {
+  const expiresAt = raw.expires_at
+    ? raw.expires_at * 1000
+    : Date.now() + (raw.expires_in || 3600) * 1000;
+  return {
+    access_token: raw.access_token,
+    refresh_token: raw.refresh_token,
+    expires_at: expiresAt,
+    user: raw.user,
+  };
+}
+
+async function persistSession(session) {
+  try {
+    await Promise.all([
+      SecureStore.setItemAsync(SESSION_KEYS.access, session.access_token),
+      SecureStore.setItemAsync(SESSION_KEYS.refresh, session.refresh_token),
+      SecureStore.setItemAsync(SESSION_KEYS.expiresAt, String(session.expires_at)),
+      SecureStore.setItemAsync(SESSION_KEYS.user, JSON.stringify(session.user || {})),
+    ]);
+  } catch (e) {
+    // Non-fatal - worst case the user has to log in again next launch.
+  }
+}
+
+async function loadPersistedSession() {
+  try {
+    const [access, refresh, expiresAt, userRaw] = await Promise.all([
+      SecureStore.getItemAsync(SESSION_KEYS.access),
+      SecureStore.getItemAsync(SESSION_KEYS.refresh),
+      SecureStore.getItemAsync(SESSION_KEYS.expiresAt),
+      SecureStore.getItemAsync(SESSION_KEYS.user),
+    ]);
+    if (!access || !refresh) return null;
+    return {
+      access_token: access,
+      refresh_token: refresh,
+      expires_at: Number(expiresAt) || 0,
+      user: userRaw ? JSON.parse(userRaw) : null,
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
+async function clearPersistedSession() {
+  try {
+    await Promise.all(Object.values(SESSION_KEYS).map((k) => SecureStore.deleteItemAsync(k)));
+  } catch (e) {
+    // ignore
+  }
+}
+// ---------- End session persistence ----------
 
 // Exact position-on-pitch coordinates from the original mockup, converted
 // to percentages for React Native's percentage-based absolute positioning.
@@ -380,10 +465,94 @@ export default function App() {
   // Typewriter intro effect is added right after onboardingStep is declared,
   // further down -- can't reference it here, it's not defined yet at this point.
 
-  // NOTE: session is only kept in memory for now -- it will NOT survive
-  // closing the app. Persisting it needs AsyncStorage, still deferred --
-  // we routed around the dependency problem for auth, not solved it.
+  // Session is persisted via expo-secure-store (see persistSession/
+  // loadPersistedSession above) and silently restored + refreshed on
+  // launch below, so closing the app no longer logs the user out.
   const [session, setSession] = useState(null);
+  const [sessionRestoring, setSessionRestoring] = useState(true);
+  const [showStandaloneLogin, setShowStandaloneLogin] = useState(false);
+  const refreshTimerRef = useRef(null);
+  const sessionRef = useRef(null);
+
+  // Applies a freshly-issued or refreshed session everywhere it's needed:
+  // state, secure storage, and the proactive refresh timer. Centralizing
+  // this means every entry point (login, signup, silent restore, token
+  // refresh) keeps all three in sync instead of duplicating the wiring.
+  function applySession(normalized) {
+    sessionRef.current = normalized;
+    setSession(normalized);
+    persistSession(normalized);
+    scheduleRefresh(normalized);
+  }
+
+  async function performRefresh(normalized) {
+    try {
+      const raw = await refreshAccessToken(normalized.refresh_token);
+      applySession(normalizeAuthResult(raw));
+    } catch (e) {
+      // Refresh token is dead (revoked/expired) - fall back to login.
+      clearPersistedSession();
+      sessionRef.current = null;
+      setSession(null);
+    }
+  }
+
+  function scheduleRefresh(normalized) {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    // Refresh a minute before expiry, but never less than 5s out (a
+    // just-issued token with a very short expiry shouldn't refresh-loop).
+    const delay = Math.max(normalized.expires_at - Date.now() - 60000, 5000);
+    refreshTimerRef.current = setTimeout(() => performRefresh(normalized), delay);
+  }
+
+  async function logoutAndClearSession() {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    const current = sessionRef.current;
+    sessionRef.current = null;
+    setSession(null);
+    await clearPersistedSession();
+    if (current?.access_token) await revokeSession(current.access_token);
+  }
+
+  // Silent restore on launch: try the persisted session before showing
+  // any UI, refreshing it first if it's at or near expiry. A restore
+  // failure just leaves the user logged out (existing behavior).
+  useEffect(() => {
+    (async () => {
+      try {
+        const stored = await loadPersistedSession();
+        if (!stored) return;
+        if (stored.expires_at - Date.now() < 60000) {
+          const raw = await refreshAccessToken(stored.refresh_token);
+          applySession(normalizeAuthResult(raw));
+        } else {
+          sessionRef.current = stored;
+          setSession(stored);
+          scheduleRefresh(stored);
+        }
+      } catch (e) {
+        await clearPersistedSession();
+      } finally {
+        setSessionRestoring(false);
+      }
+    })();
+    return () => {
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    };
+  }, []);
+
+  // Timers don't fire while the app is backgrounded/killed, so a session
+  // that expired while away needs a check right when the app comes back.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      const current = sessionRef.current;
+      if (current && current.expires_at - Date.now() < 60000) {
+        performRefresh(current);
+      }
+    });
+    return () => sub.remove();
+  }, []);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -905,7 +1074,8 @@ export default function App() {
         },
         body: JSON.stringify({}),
       });
-      setSession(result);
+      applySession(normalizeAuthResult(result));
+      setShowStandaloneLogin(false);
       if (onboardingStep === 8) setOnboardingStep(9);
     } catch (e) {
       const msg = e.message.toLowerCase();
@@ -922,7 +1092,36 @@ export default function App() {
   }
 
   function handleLogout() {
-    setSession(null);
+    logoutAndClearSession();
+  }
+
+  async function handleForgotPassword() {
+    Alert.prompt(
+      'Reset your password',
+      "Enter your account's email and we'll send you a reset link.",
+      async (input) => {
+        const resetEmail = (input || '').trim();
+        if (!resetEmail) return;
+        try {
+          await requestPasswordReset(resetEmail);
+          Alert.alert('Check your email', `If an account exists for ${resetEmail}, a reset link is on its way.`);
+        } catch (e) {
+          Alert.alert('Error', e.message);
+        }
+      },
+      'plain-text',
+      email
+    );
+  }
+
+  // ---------- Still restoring a persisted session - avoid flashing the
+  // typewriter/onboarding intro at a returning user before we know ----------
+  if (sessionRestoring) {
+    return (
+      <SafeAreaView style={styles.centerScreen}>
+        <ActivityIndicator size="large" color="#161410" />
+      </SafeAreaView>
+    );
   }
 
   // ---------- Logged in, but still checking onboarding status ----------
@@ -931,6 +1130,66 @@ export default function App() {
       <SafeAreaView style={styles.centerScreen}>
         <ActivityIndicator size="large" color="#161410" />
       </SafeAreaView>
+    );
+  }
+
+  // ---------- Standalone login: reachable from the Welcome screen so a
+  // returning user (session lost, logged out, new device) isn't forced
+  // back through the full quiz just to sign back into an existing
+  // account ----------
+  if (!session && showStandaloneLogin) {
+    return (
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <SafeAreaView style={styles.heroScreen}>
+          <Image source={{ uri: BLOB1_URI }} style={styles.blob1} />
+          <Image source={{ uri: BLOB2_URI }} style={styles.blob2} />
+          <Image source={{ uri: BLOB3_URI }} style={styles.blob3} />
+          <TouchableOpacity onPress={() => { setShowStandaloneLogin(false); setErrorMsg(''); }}>
+            <Text style={[styles.heroSkip, { marginTop: 10 }]}>← Back</Text>
+          </TouchableOpacity>
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <Image source={{ uri: LOGO_URI }} style={[styles.logoImage, { marginBottom: 24 }]} resizeMode="contain" />
+            <Text style={styles.welcomeHeadline}>Welcome back.</Text>
+            <TextInput
+              style={styles.heroInput}
+              placeholder="Email"
+              placeholderTextColor="#918c81"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              value={email}
+              onChangeText={setEmail}
+            />
+            <TextInput
+              style={styles.heroInput}
+              placeholder="Password"
+              placeholderTextColor="#918c81"
+              secureTextEntry
+              value={password}
+              onChangeText={setPassword}
+            />
+            {errorMsg ? <Text style={styles.error}>{errorMsg}</Text> : null}
+            <TouchableOpacity onPress={handleForgotPassword}>
+              <Text style={styles.heroSkip}>Forgot password?</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.btnRow}>
+            <TouchableOpacity
+              style={[styles.pillButton, submitting && styles.heroButtonDisabled]}
+              onPress={() => handleSubmit('login')}
+              disabled={submitting}
+            >
+              <Text style={styles.pillButtonText}>{submitting ? 'Logging in...' : 'Log In'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.arrowCircle, submitting && styles.heroButtonDisabled]}
+              onPress={() => handleSubmit('login')}
+              disabled={submitting}
+            >
+              <Text style={styles.arrowCircleText}>→</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
     );
   }
 
@@ -1019,6 +1278,9 @@ export default function App() {
             <Text style={styles.welcomeSpotted}>👀 Spotted by 12,400 scouts already</Text>
           </View>
           <PrimaryButton label="Get Started" onPress={() => setOnboardingStep(1)} />
+          <TouchableOpacity onPress={() => { setErrorMsg(''); setShowStandaloneLogin(true); }}>
+            <Text style={[styles.heroSkip, { textAlign: 'center', marginBottom: 8 }]}>Already have an account? Log in</Text>
+          </TouchableOpacity>
         </SafeAreaView>
       );
     }
