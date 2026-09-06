@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, Alert, Image, ScrollView,
   ActivityIndicator, SafeAreaView, KeyboardAvoidingView, Platform, Animated, RefreshControl, AppState,
+  Modal,
 } from 'react-native';
 import * as Font from 'expo-font';
 import * as SecureStore from 'expo-secure-store';
@@ -702,6 +703,8 @@ export default function App() {
   const [transactions, setTransactions] = useState([]);
   const [transactionsError, setTransactionsError] = useState('');
   const [watchlist, setWatchlist] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [leaderboard, setLeaderboard] = useState([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [claimedMilestones, setClaimedMilestones] = useState([]);
@@ -717,7 +720,7 @@ export default function App() {
     try {
       await Promise.all([
         fetchPlayers(), fetchCash(), fetchHoldings(), fetchTransactions(),
-        fetchWatchlist(), fetchLeaderboard(), fetchMilestones(),
+        fetchWatchlist(), fetchLeaderboard(), fetchMilestones(), fetchNotifications(),
       ]);
     } finally {
       setRefreshing(false);
@@ -737,6 +740,7 @@ export default function App() {
       fetchWatchlist();
       fetchLeaderboard();
       fetchMilestones();
+      fetchNotifications();
     }
   }, [session]);
 
@@ -868,6 +872,34 @@ export default function App() {
       if (res.ok) setWatchlist(data);
     } catch (e) {
       // non-fatal
+    }
+  }
+
+  async function fetchNotifications() {
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/notifications?select=*&order=created_at.desc&limit=50`,
+        { headers: authHeaders() }
+      );
+      const data = await res.json();
+      if (res.ok) setNotifications(data);
+    } catch (e) {
+      // non-fatal - the bell just won't update this refresh
+    }
+  }
+
+  async function markAllNotificationsRead() {
+    const unread = notifications.filter((n) => !n.read);
+    if (unread.length === 0) return;
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/notifications?user_id=eq.${session.user.id}&read=eq.false`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ read: true }),
+      });
+    } catch (e) {
+      // non-fatal - next fetch will reconcile
     }
   }
 
@@ -1730,10 +1762,10 @@ export default function App() {
             <View style={styles.homeHeader}>
               <Image source={{ uri: LOGO_URI }} style={styles.homeLogo} resizeMode="contain" />
               <View style={styles.homeHeaderActions}>
-                <View style={styles.homeIconBtn}>
+                <TouchableOpacity style={styles.homeIconBtn} onPress={() => setShowNotifications(true)}>
                   <Text style={styles.homeIconBtnText}>🔔</Text>
-                  <View style={styles.homeNotifDot} />
-                </View>
+                  {notifications.some((n) => !n.read) ? <View style={styles.homeNotifDot} /> : null}
+                </TouchableOpacity>
                 <View style={[styles.homeIconBtn, styles.homeAvatarBtn]}>
                   <Text style={styles.homeAvatarText}>
                     {(session.user?.email || 'U').slice(0, 2).toUpperCase()}
@@ -2508,6 +2540,54 @@ export default function App() {
             </TouchableOpacity>
           ))}
         </View>
+
+        <Modal visible={showNotifications} animationType="slide" transparent onRequestClose={() => setShowNotifications(false)}>
+          <View style={styles.notifModalBackdrop}>
+            <SafeAreaView style={styles.notifModalSheet}>
+              <View style={styles.notifModalHeader}>
+                <Text style={styles.notifModalTitle}>Notifications</Text>
+                <TouchableOpacity onPress={() => setShowNotifications(false)}>
+                  <Text style={styles.notifModalClose}>✕</Text>
+                </TouchableOpacity>
+              </View>
+              {notifications.some((n) => !n.read) ? (
+                <TouchableOpacity onPress={markAllNotificationsRead} style={{ paddingHorizontal: 20, paddingBottom: 8 }}>
+                  <Text style={{ color: '#161410', fontSize: 13, fontWeight: '700', textDecorationLine: 'underline' }}>Mark all read</Text>
+                </TouchableOpacity>
+              ) : null}
+              <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+                {notifications.length === 0 ? (
+                  <EmptyState icon="🔔" text="Nothing yet — you'll see price moves, injury news, and milestones for players you hold or watch here." />
+                ) : (
+                  notifications.map((n) => (
+                    <TouchableOpacity
+                      key={n.id}
+                      style={[styles.notifRow, !n.read && styles.notifRowUnread]}
+                      onPress={() => {
+                        if (n.read) return;
+                        setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
+                        fetch(`${SUPABASE_URL}/rest/v1/notifications?id=eq.${n.id}`, {
+                          method: 'PATCH',
+                          headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+                          body: JSON.stringify({ read: true }),
+                        }).catch(() => {});
+                      }}
+                    >
+                      <Text style={styles.notifIcon}>
+                        {n.type === 'price_move' ? '📈' : n.type === 'injury' ? '🩹' : '🏆'}
+                      </Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.notifTitle}>{n.title}</Text>
+                        <Text style={styles.notifBody}>{n.body}</Text>
+                      </View>
+                      {!n.read ? <View style={styles.notifUnreadDot} /> : null}
+                    </TouchableOpacity>
+                  ))
+                )}
+              </ScrollView>
+            </SafeAreaView>
+          </View>
+        </Modal>
       </SafeAreaView>
     );
   }
@@ -2537,6 +2617,26 @@ const styles = StyleSheet.create({
     shadowColor: '#161410', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 10, elevation: 2,
   },
   homeIconBtnText: { fontSize: 16 },
+  notifModalBackdrop: { flex: 1, backgroundColor: 'rgba(22,20,16,0.4)', justifyContent: 'flex-end' },
+  notifModalSheet: {
+    backgroundColor: '#faf9f6', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    maxHeight: '80%', paddingTop: 8,
+  },
+  notifModalHeader: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 20, paddingVertical: 14,
+  },
+  notifModalTitle: { fontSize: 18, fontWeight: '800', color: '#161410', letterSpacing: -0.3 },
+  notifModalClose: { fontSize: 18, color: '#918c81', fontWeight: '700' },
+  notifRow: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+    paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee9dd',
+  },
+  notifRowUnread: { backgroundColor: '#fbf7ec' },
+  notifIcon: { fontSize: 20, marginTop: 2 },
+  notifTitle: { fontSize: 14, fontWeight: '700', color: '#161410' },
+  notifBody: { fontSize: 13, color: '#5c574c', marginTop: 2 },
+  notifUnreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#c1483f', marginTop: 6 },
   homeNotifDot: {
     position: 'absolute', top: 8, right: 9, width: 7, height: 7, borderRadius: 4,
     backgroundColor: '#c1483f', borderWidth: 1.5, borderColor: '#ffffff',
