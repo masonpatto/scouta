@@ -1552,14 +1552,11 @@ export default function App() {
             </View>
             {errorMsg ? <Text style={styles.error}>{errorMsg}</Text> : null}
             <PrimaryButton
-              label={submitting ? 'Creating account...' : (mode === 'login' ? 'Log In' : 'Create Account')}
-              onPress={() => handleSubmit(mode)}
+              label={submitting ? 'Creating account...' : 'Create Account'}
+              onPress={() => handleSubmit('signup')}
               disabled={submitting}
               compact
             />
-            <TouchableOpacity onPress={() => { setMode('login'); }}>
-              <Text style={styles.heroSkip}>Already have an account? Log in instead</Text>
-            </TouchableOpacity>
           </SafeAreaView>
         </KeyboardAvoidingView>
       );
@@ -1709,7 +1706,7 @@ export default function App() {
           <View style={styles.cardBevelTop} />
           <View style={styles.cardBevelBottom} />
           <AnimatedShine />
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, paddingBottom: 24 }}>
             {opts.showTopRow ? (
               <View style={styles.cardTopRowV2}>
                 <Image source={{ uri: CHIP_URI }} style={styles.chipIcon} />
