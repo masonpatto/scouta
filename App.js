@@ -1704,50 +1704,63 @@ export default function App() {
       const tier = tierFor(item.rating, item.age);
       return (
         <View key={item.id} style={[styles.playerRow, opts.cardStyle]}>
-          <Image
-            source={{ uri: TIER_BG_URIS[tier.bg] }}
-            style={styles.tierBg}
-            resizeMode="stretch"
-          />
-          <View style={[styles.cardTopHighlight, { backgroundColor: tier.border }]} />
+          <Image source={{ uri: TIER_BG_URIS[tier.bg] }} style={styles.tierBg} resizeMode="stretch" />
+          <Text style={[styles.cardTierLabel, { color: tier.accent }]}>{tier.label}</Text>
+          <View style={styles.cardBevelTop} />
+          <View style={styles.cardBevelBottom} />
           <AnimatedShine />
           <View style={{ flex: 1 }}>
             {opts.showTopRow ? (
-              <View style={styles.cardTopRow}>
+              <View style={styles.cardTopRowV2}>
                 <Image source={{ uri: CHIP_URI }} style={styles.chipIcon} />
-                <PitchIcon position={item.position} lineColor={tier.dim} />
                 {item.rating ? (
                   <View style={styles.ratingBadge}>
                     <Text style={[styles.ratingNumber, { color: tier.accent }]}>{item.rating}</Text>
-                    <Text style={[styles.ratingLabel, { color: tier.dim }]}>RTG</Text>
-                  </View>
-                ) : null}
-                {item.potential !== null && item.potential !== undefined ? (
-                  <View style={[styles.ratingBadge, { marginLeft: 6 }]}>
-                    <Text style={[styles.ratingNumber, { color: tier.accent }]}>{item.potential}</Text>
-                    <Text style={[styles.ratingLabel, { color: tier.dim }]}>POT</Text>
+                    <Text style={[styles.ratingLabel, { color: tier.dim }]}>RATING</Text>
                   </View>
                 ) : null}
               </View>
             ) : null}
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text style={[styles.playerName, { color: tier.text }, fontsLoaded && { fontFamily: 'Fraunces-SemiBold' }]}>{item.name}</Text>
-              {item.nationality ? (
-                <Text style={styles.flagEmoji}>{flagEmoji(item.nationality)}</Text>
-              ) : null}
+
+            <View style={styles.cardBottomRowV2}>
+              <View style={styles.cardLeftColV2}>
+                {opts.detail ? (
+                  <Text style={[styles.playerDetailV2, { color: tier.dim }]}>{opts.detail}</Text>
+                ) : null}
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Text style={[styles.playerName, { color: tier.text }]} numberOfLines={1}>
+                    {item.name}
+                  </Text>
+                  {item.nationality ? (
+                    <Text style={styles.flagEmoji}>{flagEmoji(item.nationality)}</Text>
+                  ) : null}
+                </View>
+              </View>
+
+              <View style={styles.cardRightColV2}>
+                <View style={styles.priceRowV2}>
+                  <Text style={[styles.priceMainV2, { color: tier.text }]}>
+                    {item.current_price != null ? Math.round(item.current_price).toLocaleString('en-US') : '—'}
+                  </Text>
+                  <Text style={[styles.priceSuffixV2, { color: tier.dim }]}> SC</Text>
+                </View>
+                {opts.plText ? (
+                  <Text style={[styles.plText, { color: opts.plColor }]}>{opts.plText}</Text>
+                ) : null}
+                {opts.rightButton ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+                    {opts.rightButton}
+                  </View>
+                ) : null}
+              </View>
             </View>
-            {opts.detail ? <Text style={[styles.playerDetail, { color: tier.dim }]}>{opts.detail}</Text> : null}
-            <Text style={[styles.playerPrice, { color: tier.text }]}>{formatSC(item.current_price)}</Text>
-            {opts.plText ? (
-              <Text style={[styles.plText, { color: opts.plColor }]}>{opts.plText}</Text>
-            ) : null}
+
             {opts.showFooter ? (
-              <Text style={[styles.cardFooter, { color: tier.dim }]}>
+              <Text style={[styles.cardFooter, { color: tier.dim, textAlign: 'center' }]}>
                 SC · {item.nationality || '--'} · {item.id.slice(-4).toUpperCase()} · {item.rating || '--'}
               </Text>
             ) : null}
           </View>
-          {opts.rightButton}
         </View>
       );
     }
@@ -3042,7 +3055,27 @@ const styles = StyleSheet.create({
     position: 'absolute', width: 5, height: 5, borderRadius: 2.5,
     backgroundColor: '#8fe0af', marginLeft: -2.5, marginTop: -2.5,
   },
-  playerName: { fontSize: 15, fontWeight: '700', color: '#faf9f6' },
+  playerName: { fontSize: 18, fontWeight: '700', letterSpacing: -0.3 },
+  cardTopRowV2: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  cardBottomRowV2: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 34 },
+  cardLeftColV2: { flex: 1, paddingRight: 12 },
+  cardRightColV2: { alignItems: 'flex-end' },
+  playerDetailV2: { fontSize: 8.5, marginBottom: 6, letterSpacing: 2, textTransform: 'uppercase', fontWeight: '500' },
+  priceRowV2: { flexDirection: 'row', alignItems: 'baseline' },
+  priceMainV2: { fontSize: 19, fontWeight: '800', letterSpacing: -0.3 },
+  priceSuffixV2: { fontSize: 11, fontWeight: '700' },
+  cardBevelTop: {
+    position: 'absolute', top: 0, left: 0, right: 0, height: 1.5,
+    backgroundColor: 'rgba(255,255,255,0.20)',
+  },
+  cardBevelBottom: {
+    position: 'absolute', bottom: 0, left: 0, right: 0, height: 1.5,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  cardTierLabel: {
+    position: 'absolute', bottom: 14, left: 0, right: 0, textAlign: 'center',
+    fontSize: 7.5, fontWeight: '700', letterSpacing: 5, opacity: 0.75,
+  },
   playerDetail: { fontSize: 12.5, color: '#a8a29a', marginTop: 2 },
   playerPrice: { fontSize: 13, fontWeight: '700', color: '#faf9f6', marginTop: 4 },
   profHeader: {
