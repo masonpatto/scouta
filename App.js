@@ -96,19 +96,19 @@ const TIER_BG_URIS = {
 // discipline that keeps a tiered set feeling like one coherent system
 // rather than several unrelated designs.
 const TIERS = {
-  elite:    { bg: 'elite',    accent: '#e2c47c', text: '#f5f2ec', dim: 'rgba(245,242,236,0.5)',  border: 'rgba(226,196,124,0.35)', gain: '#6fcf97' },
-  platinum: { bg: 'platinum', accent: '#3d4750', text: '#1a1710', dim: 'rgba(60,50,30,0.55)',    border: 'rgba(120,130,140,0.35)', gain: '#2d7a4f' },
-  forest:   { bg: 'forest',   accent: '#d9b871', text: '#f5f2ec', dim: 'rgba(245,242,236,0.5)',  border: 'rgba(201,165,92,0.22)',  gain: '#6fcf97' },
-  midnight: { bg: 'midnight', accent: '#6fcf97', text: '#f5f2ec', dim: 'rgba(245,242,236,0.5)',  border: 'rgba(111,207,151,0.2)',  gain: '#6fcf97' },
-  sand:     { bg: 'sand',     accent: '#8a6d2f', text: '#1a1710', dim: 'rgba(60,50,30,0.55)',    border: 'rgba(180,160,120,0.4)',  gain: '#2d7a4f' },
+  elite:    { bg: 'elite',    label: 'ELITE',    accent: '#e2c47c', text: '#f5f2ec', dim: 'rgba(245,242,236,0.5)',  border: 'rgba(226,196,124,0.35)', gain: '#6fcf97' },
+  platinum: { bg: 'platinum', label: 'PLATINUM', accent: '#3d4750', text: '#1a1710', dim: 'rgba(60,50,30,0.55)',    border: 'rgba(120,130,140,0.35)', gain: '#2d7a4f' },
+  forest:   { bg: 'forest',   label: 'RARE',      accent: '#d9b871', text: '#f5f2ec', dim: 'rgba(245,242,236,0.5)',  border: 'rgba(201,165,92,0.22)',  gain: '#6fcf97' },
+  midnight: { bg: 'midnight', label: 'UNCOMMON',  accent: '#6fcf97', text: '#f5f2ec', dim: 'rgba(245,242,236,0.5)',  border: 'rgba(111,207,151,0.2)',  gain: '#6fcf97' },
+  sand:     { bg: 'sand',     label: 'COMMON',    accent: '#8a6d2f', text: '#1a1710', dim: 'rgba(60,50,30,0.55)',    border: 'rgba(180,160,120,0.4)',  gain: '#2d7a4f' },
   // ---- Special editions. These OVERRIDE the rating tier ----
   // Violet reads as rare/future, and it's the one colour not used in
   // the ladder, so a wonderkid stands out as special rather than just
   // another rung.
-  wonderkid: { bg: 'wonderkid', accent: '#c3a3e8', text: '#f5f2ec', dim: 'rgba(245,242,236,0.5)', border: 'rgba(168,132,214,0.4)', gain: '#6fcf97' },
+  wonderkid: { bg: 'wonderkid', label: 'WONDERKID', accent: '#c3a3e8', text: '#f5f2ec', dim: 'rgba(245,242,236,0.5)', border: 'rgba(168,132,214,0.4)', gain: '#6fcf97' },
   // Ivory letterpress -- classic and print-like, so a long career reads
   // as earned rather than merely highly rated.
-  veteran:   { bg: 'veteran',   accent: '#8a6d2f', text: '#1a1710', dim: 'rgba(60,50,30,0.55)',   border: 'rgba(180,160,120,0.55)', gain: '#2d7a4f' },
+  veteran:   { bg: 'veteran',   label: 'VETERAN',   accent: '#8a6d2f', text: '#1a1710', dim: 'rgba(60,50,30,0.55)',   border: 'rgba(180,160,120,0.55)', gain: '#2d7a4f' },
 };
 
 // Thresholds set against the REAL rating distribution (floor 72,
