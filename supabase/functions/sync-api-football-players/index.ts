@@ -32,6 +32,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const API_BASE = "https://v3.football.api-sports.io";
 const REQUEST_BUDGET = 85; // per invocation; stays well under the 100/day free cap
+const FREE_TIER_MAX_SEASON = 2024; // free plan only covers 2022-2024; ratings/rosters are from that season, not live-current
 const PAGE_SIZE_NOTE = "API-Football paginates /players at a fixed page size set by them, not by us.";
 
 // Target competitions. Resolved to numeric league IDs + current season
@@ -136,10 +137,16 @@ Deno.serve(async () => {
         log.push(`Could not resolve league "${lg.name}" (${lg.country}) -- check the name/country match API-Football's data.`);
         continue;
       }
-      const currentSeason = (entry.seasons ?? []).find((s: any) => s.current)?.year
-        ?? (entry.seasons ?? []).slice(-1)[0]?.year;
+      // The free tier only has access to seasons 2022-2024 (not whatever
+      // API-Football calls "current"), so pick the newest season at or
+      // below that ceiling rather than trusting the current:true flag.
+      const eligibleYears = (entry.seasons ?? [])
+        .map((s: any) => s.year)
+        .filter((y: number) => y <= FREE_TIER_MAX_SEASON)
+        .sort((a: number, b: number) => b - a);
+      const currentSeason = eligibleYears[0];
       if (!currentSeason) {
-        log.push(`Resolved league "${lg.name}" to id ${entry.league.id} but found no season.`);
+        log.push(`Resolved league "${lg.name}" to id ${entry.league.id} but found no season <= ${FREE_TIER_MAX_SEASON}.`);
         continue;
       }
       await setState(supabase, `af_league_${lg.key}_id`, entry.league.id);
