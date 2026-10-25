@@ -1345,7 +1345,7 @@ function AppInner() {
           </TouchableOpacity>
           <View style={{ flex: 1, justifyContent: 'center' }}>
             <Image source={{ uri: LOGO_URI }} style={[styles.logoImage, { marginBottom: 24 }]} resizeMode="contain" />
-            <Text style={[styles.welcomeHeadline, fontsLoaded && { fontFamily: 'Fraunces-SemiBold' }]}>Welcome back.</Text>
+            <Text style={styles.welcomeHeadline}>Welcome back.</Text>
             <TextInput
               style={styles.heroInput}
               placeholder="Email"
@@ -1450,7 +1450,7 @@ function AppInner() {
           <ProgressBar />
           <Image source={{ uri: LOGO_URI }} style={styles.logoImageTopLeft} resizeMode="contain" />
           <View style={{ flex: 1, justifyContent: 'center' }}>
-            <Text style={[styles.welcomeHeadline, fontsLoaded && { fontFamily: 'Fraunces-SemiBold' }]}>
+            <Text style={styles.welcomeHeadline}>
               Discover the next{'\n'}
               <Image source={{ uri: MESSI_TEXT_URI }} style={styles.messiInline} resizeMode="contain" /> before everyone{'\n'}
               else.
@@ -1490,7 +1490,7 @@ function AppInner() {
           <Image source={{ uri: BLOB3_URI }} style={styles.blob3} /><Image source={{ uri: GUILLOCHE_URI }} style={[styles.guilloche, { opacity: 0.06 }]} resizeMode="repeat" />
           <ProgressBar />
           <View style={{ flex: 1, justifyContent: 'center' }}>
-            <Text style={[styles.heroTitle, { fontSize: 25, textAlign: 'left', letterSpacing: -0.3, fontWeight: '800', marginBottom: 24, marginLeft: 14 }, fontsLoaded && { fontFamily: 'Fraunces-SemiBold' }]}>
+            <Text style={[styles.heroTitle, { fontSize: 25, textAlign: 'left', letterSpacing: -0.3, fontWeight: '800', marginBottom: 24, marginLeft: 14 }]}>
               How will you use Scouta?
             </Text>
             <TouchableOpacity
@@ -1640,7 +1640,7 @@ function AppInner() {
             <ProgressBar />
             <View style={{ flex: 1, justifyContent: 'center' }}>
               <View style={{ marginBottom: 20 }}>
-                <Text style={[styles.welcomeHeadline, { marginTop: 10 }, fontsLoaded && { fontFamily: 'Fraunces-SemiBold' }]}>Your Scouta profile is ready.</Text>
+                <Text style={[styles.welcomeHeadline, { marginTop: 10 }]}>Your Scouta profile is ready.</Text>
                 <Text style={[styles.welcomeSub, { marginBottom: 0 }]}>Create your account to save your scouting identity and start building your portfolio.</Text>
               </View>
               <View style={[styles.identityRecapWrap, { marginBottom: 20 }]}>
