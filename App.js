@@ -1241,45 +1241,56 @@ function AppInner() {
     setPlayersLoading(true);
     setPlayersError('');
     try {
-      const res = await fetch(
-        // active=eq.true excludes the old fictional mockup players.
-        // They're still in the table (holdings reference them, so they
-        // can't be deleted) but should never be shown.
-        `${SUPABASE_URL}/rest/v1/players?select=*&active=eq.true&order=rating.desc`,
-        {
-          headers: {
-            apikey: SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      );
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.message || 'Failed to load players.');
-      }
-      setPlayers(data);
-
-      // Real 24h % change per player, via the price_change_pct() function
-      // added in scouta_schema_part3.sql. Fetched concurrently since it's
-      // one RPC call per player. A null result means genuinely not enough
-      // price history yet for that player -- handled as "no data" in the
-      // UI, never shown as a fake 0%.
-      const changeResults = await Promise.all(
-        data.map(async (p) => {
-          try {
-            const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/price_change_pct`, {
-              method: 'POST',
-              headers: { ...authHeaders(), 'Content-Type': 'application/json' },
-              body: JSON.stringify({ p_player_id: p.id, p_hours: 24 }),
-            });
-            const pct = await r.json();
-            return [p.id, r.ok ? pct : null];
-          } catch (e) {
-            return [p.id, null];
+      // Explicitly paginated via Range, rather than one unbounded
+      // request: the roster grew from ~650 (Premier League only) to
+      // ~3,000 (every Sportmonks-subscribed league) once Phase 2 synced,
+      // and PostgREST caps an unbounded request's row count -- silently,
+      // with no error -- so a single fetch could quietly return only
+      // part of the roster. Looping with an explicit Range until a page
+      // comes back short works regardless of what that cap actually is.
+      const PAGE_SIZE = 1000;
+      let allPlayers = [];
+      let offset = 0;
+      for (;;) {
+        const res = await fetch(
+          // active=eq.true excludes the old fictional mockup players.
+          // They're still in the table (holdings reference them, so they
+          // can't be deleted) but should never be shown.
+          `${SUPABASE_URL}/rest/v1/players?select=*&active=eq.true&order=rating.desc`,
+          {
+            headers: {
+              ...authHeaders(),
+              Range: `${offset}-${offset + PAGE_SIZE - 1}`,
+            },
           }
-        })
-      );
-      setPriceChanges(Object.fromEntries(changeResults));
+        );
+        const page = await res.json();
+        if (!res.ok) {
+          throw new Error(page.message || 'Failed to load players.');
+        }
+        allPlayers = allPlayers.concat(page);
+        if (page.length < PAGE_SIZE) break;
+        offset += PAGE_SIZE;
+      }
+      setPlayers(allPlayers);
+
+      // Real 24h % change per player, via the price_change_pct_bulk()
+      // RPC (migration 0012) -- one round trip for every player's
+      // change instead of one request per player (fine at ~650 players,
+      // not at ~3,000). A null pct means genuinely not enough price
+      // history yet for that player -- handled as "no data" in the UI,
+      // never shown as a fake 0%.
+      const bulkRes = await fetch(`${SUPABASE_URL}/rest/v1/rpc/price_change_pct_bulk`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_hours: 24 }),
+      });
+      const bulkRows = await bulkRes.json();
+      if (bulkRes.ok && Array.isArray(bulkRows)) {
+        setPriceChanges(Object.fromEntries(bulkRows.map((r) => [r.player_id, r.pct])));
+      } else {
+        setPriceChanges({});
+      }
     } catch (e) {
       setPlayersError(e.message);
     } finally {
