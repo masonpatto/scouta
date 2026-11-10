@@ -1396,25 +1396,25 @@ function AppInner() {
     const totalSteps = 10; // welcome, mode, 4 quiz, archetype, potential, account, capital, mission
     const progressDots = Array.from({ length: totalSteps }, (_, i) => i <= onboardingStep);
 
-    function ProgressBar() {
+    function ProgressBar({ dotStyle, dotFilledStyle }) {
       return (
         <View style={styles.progressRow}>
           {progressDots.map((filled, i) => (
-            <View key={i} style={[styles.progressDot, filled && styles.progressDotFilled]} />
+            <View key={i} style={[styles.progressDot, dotStyle, filled && styles.progressDotFilled, filled && dotFilledStyle]} />
           ))}
         </View>
       );
     }
 
-    function PrimaryButton({ label, onPress, disabled, compact }) {
+    function PrimaryButton({ label, onPress, disabled, compact, style, textStyle }) {
       return (
         <View style={[styles.btnRow, compact && styles.btnRowCompact]}>
           <TouchableOpacity
-            style={[styles.pillButton, compact && styles.pillButtonCompact, disabled && styles.heroButtonDisabled]}
+            style={[styles.pillButton, compact && styles.pillButtonCompact, disabled && styles.heroButtonDisabled, style]}
             onPress={onPress}
             disabled={disabled}
           >
-            <Text style={styles.pillButtonText}>{label}</Text>
+            <Text style={[styles.pillButtonText, textStyle]}>{label}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.arrowCircle, disabled && styles.heroButtonDisabled]}
@@ -1442,20 +1442,41 @@ function AppInner() {
 
     // ---------- Step 0: Welcome ----------
     if (onboardingStep === 0) {
+      // Dark "charcoal" theme for the welcome screen only -- inverted from
+      // the cream original (#faf9f6 bg / #161410 ink) to a near-black ink
+      // bg (#171410) with cream text, reusing the existing forest/RARE
+      // gold (#d9b871) as the one accent. Scoped to this screen via style
+      // overrides rather than touching shared styles, since steps 1+
+      // reuse heroScreen/ProgressBar/PrimaryButton and stay on the cream
+      // look. The LOGO_URI image is baked near-black ink (confirmed by
+      // pixel-sampling it) and would be invisible here, so this screen
+      // swaps it for a plain text wordmark instead of the image -- the
+      // only other screen-specific substitution; everything else (blobs,
+      // mini card, Messi inline image) held up fine on dark.
       return (
-        <SafeAreaView style={styles.heroScreen}>
+        <SafeAreaView style={[styles.heroScreen, { backgroundColor: '#171410' }]}>
           <Image source={{ uri: BLOB1_URI }} style={styles.blob1} />
           <Image source={{ uri: BLOB2_URI }} style={styles.blob2} />
           <Image source={{ uri: BLOB3_URI }} style={styles.blob3} /><Image source={{ uri: GUILLOCHE_URI }} style={[styles.guilloche, { opacity: 0.06 }]} resizeMode="repeat" />
-          <ProgressBar />
-          <Image source={{ uri: LOGO_URI }} style={styles.logoImageTopLeft} resizeMode="contain" />
+          <ProgressBar
+            dotStyle={{ backgroundColor: 'rgba(243,234,217,0.12)' }}
+            dotFilledStyle={{ backgroundColor: '#d9b871' }}
+          />
+          <Text
+            style={[
+              fontsLoaded && { fontFamily: 'Fraunces-SemiBold' },
+              { fontSize: 16, fontWeight: '700', letterSpacing: 0.5, color: '#f3ead9', marginLeft: 16, marginTop: 145, marginBottom: 36 },
+            ]}
+          >
+            Scouta
+          </Text>
           <View style={{ flex: 1, justifyContent: 'center' }}>
-            <Text style={styles.welcomeHeadline}>
+            <Text style={[styles.welcomeHeadline, { color: '#f3ead9' }]}>
               Discover the next{'\n'}
               <Image source={{ uri: MESSI_TEXT_URI }} style={styles.messiInline} resizeMode="contain" /> before everyone{'\n'}
               else.
             </Text>
-            <Text style={styles.welcomeSub}>Scout emerging talent. Build a portfolio.{'\n'}Prove you knew first.</Text>
+            <Text style={[styles.welcomeSub, { color: '#a69a86' }]}>Scout emerging talent. Build a portfolio.{'\n'}Prove you knew first.</Text>
             <View style={styles.miniHeroCard}>
               <View style={styles.miniHeroTop}>
                 <Image source={{ uri: YAMAL_AVATAR_URI }} style={styles.miniHeroAvatar} />
@@ -1471,11 +1492,16 @@ function AppInner() {
                 </View>
               </View>
             </View>
-            <Text style={styles.welcomeSpotted}>👀 Spotted by 12,400 scouts already</Text>
+            <Text style={[styles.welcomeSpotted, { color: '#a69a86' }]}>👀 Spotted by 12,400 scouts already</Text>
           </View>
-          <PrimaryButton label="Get Started" onPress={() => setOnboardingStep(1)} />
+          <PrimaryButton
+            label="Get Started"
+            onPress={() => setOnboardingStep(1)}
+            style={{ backgroundColor: '#d9b871', shadowColor: '#d9b871', shadowOpacity: 0.25 }}
+            textStyle={{ color: '#1a1410' }}
+          />
           <TouchableOpacity onPress={() => { setErrorMsg(''); setShowStandaloneLogin(true); }}>
-            <Text style={[styles.heroSkip, { textAlign: 'center', marginBottom: 8 }]}>Already have an account? Log in</Text>
+            <Text style={[styles.heroSkip, { textAlign: 'center', marginBottom: 8, color: '#a69a86' }]}>Already have an account? Log in</Text>
           </TouchableOpacity>
         </SafeAreaView>
       );
