@@ -1485,7 +1485,7 @@ function AppInner() {
             onPress={onPress}
             disabled={disabled}
           >
-            <Text style={styles.pillButtonText}>{label}</Text>
+            <Text style={styles.pillButtonText} numberOfLines={1}>{label}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.arrowCircle, disabled && styles.heroButtonDisabled]}
@@ -3046,7 +3046,7 @@ const styles = StyleSheet.create({
     flex: 1, alignItems: 'center', shadowColor: '#141208', shadowOffset: { width: 0, height: 14 },
     shadowOpacity: 0.35, shadowRadius: 28, elevation: 6,
   },
-  pillButtonCompact: { flex: 0 },
+  pillButtonCompact: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto' },
   pillButtonText: { color: '#faf9f6', fontSize: 15, fontWeight: '400', fontFamily: 'PlusJakartaSans-ExtraBold' },
   arrowCircle: {
     width: 54, height: 54, borderRadius: 27, backgroundColor: '#ffffff', borderWidth: 1,
