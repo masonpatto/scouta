@@ -30,10 +30,19 @@
 //   https://docs.sportmonks.com/v3/definitions/types/position-types),
 //   not a runtime /core/types call -- simpler than API-Football's
 //   approach and these IDs are stable, documented constants.
-// - No resumable cursor like the old plan needed: at roughly 100-110
-//   teams across a 5-league plan, one run (~115 requests total) comfortably
-//   finishes well under this plan's hourly budget. If the league count
-//   grows a lot later, revisit.
+// - IS resumable across invocations via the `sync_state` table, capped
+//   at TEAM_BUDGET teams per run. The original version of this file
+//   assumed rate limits (2,000+ req/hour) were the only constraint and
+//   tried the whole ~100-110 teams in one invocation -- wrong: Supabase
+//   Edge Functions cap a single invocation at 150s wall-clock AND 2s of
+//   actual CPU time (async I/O doesn't count, but JSON-parsing/iterating
+//   every player's full statistics payload across 100+ teams does), and
+//   that first version blew past one or both, hanging for ages and then
+//   failing. Also scopes the `player.statistics` include to just the
+//   current season (`playerStatisticSeasons` filter) instead of a
+//   player's entire career, cutting payload size and CPU/parse cost
+//   substantially. Call it repeatedly (or let the cron schedule call it
+//   repeatedly) until a response says `"done": true`.
 //
 // Deploy: paste this file's contents into a new Edge Function named
 // "sync-sportmonks-players" in the Supabase dashboard. Requires one
@@ -43,6 +52,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const API_BASE = "https://api.sportmonks.com/v3/football";
+const TEAM_BUDGET = 15; // teams processed per invocation; stays well under the 150s/2s-CPU per-invocation limits
 
 // https://docs.sportmonks.com/v3/definitions/types/position-types
 const POSITION_NAMES: Record<number, string> = {
@@ -154,13 +164,15 @@ Deno.serve(async () => {
     }
     log.push(`Found ${teams.length} team(s) across those leagues.`);
 
-    // ---- Step 3: resume cursor across teams, in case of a mid-run failure ----
+    // ---- Step 3: resume cursor across teams, capped per invocation ----
     let teamIdx = (await getState(supabase, "sm_cursor_team_idx")) ?? 0;
+    const budgetEnd = Math.min(teamIdx + TEAM_BUDGET, teams.length);
 
-    for (; teamIdx < teams.length; teamIdx++) {
+    for (; teamIdx < budgetEnd; teamIdx++) {
       const team = teams[teamIdx];
       const json = await callApi(
-        `/squads/teams/${team.id}?include=player.statistics.details;player.nationality;player.position`,
+        `/squads/teams/${team.id}?include=player.statistics.details;player.nationality;player.position` +
+          `&filters=playerStatisticSeasons:${team.seasonId}`,
         token,
         calls
       );
@@ -205,21 +217,29 @@ Deno.serve(async () => {
       await setState(supabase, "sm_cursor_team_idx", teamIdx + 1);
     }
 
-    // Run finished cleanly -- reset the cursor so the next scheduled run
-    // starts a fresh full pass (this job refreshes ratings/rosters on
-    // every run, it doesn't "finish" once like the old plan's budget-
-    // limited seeding did).
-    await setState(supabase, "sm_cursor_team_idx", 0);
+    const done = teamIdx >= teams.length;
+    if (done) {
+      // Full pass finished -- reset the cursor so the next scheduled run
+      // starts a fresh pass (this job refreshes ratings/rosters on every
+      // full pass, it doesn't "finish" once like the old plan's
+      // budget-limited seeding did).
+      await setState(supabase, "sm_cursor_team_idx", 0);
+    }
 
     return new Response(
       JSON.stringify({
         ok: true,
-        upserted,
-        teams_processed: teams.length,
+        done,
+        upserted_this_run: upserted,
+        teams_total: teams.length,
+        resumed_at_team_idx: teamIdx,
         api_calls_this_run: calls.count,
         upsert_error_count: upsertErrors.length,
         upsert_errors: upsertErrors.slice(0, 20),
         log,
+        note: done
+          ? "Full pass across all teams complete."
+          : `Budget reached for this run -- call again (${teams.length - teamIdx} team(s) left) to continue.`,
       }),
       { headers: { "Content-Type": "application/json" } }
     );

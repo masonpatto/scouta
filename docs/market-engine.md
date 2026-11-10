@@ -173,15 +173,21 @@ are injected automatically, same as Phase 1.
 
 ### 4. Test it once manually before scheduling
 
-Trigger it directly (Edge Functions page → Invoke, or call it with your
-project's service role key). A healthy first response looks like:
+This job processes a bounded number of teams per call (`TEAM_BUDGET`,
+15 by default) and picks up where it left off, because Supabase Edge
+Functions cap a single invocation at 150s wall-clock and 2s of actual
+CPU time — trying to do all ~100+ teams in one call hits that limit and
+just hangs before failing. Trigger it directly (Edge Functions page →
+Invoke, or call it with your project's service role key); a healthy
+first response looks like:
 ```json
-{"ok": true, "upserted": 850, "teams_processed": 106, "api_calls_this_run": 112, "upsert_error_count": 0, "log": [...]}
+{"ok": true, "done": false, "upserted_this_run": 120, "teams_total": 106, "resumed_at_team_idx": 15, "api_calls_this_run": 20, "upsert_error_count": 0, "log": [...], "note": "Budget reached for this run -- call again (91 team(s) left) to continue."}
 ```
-Read the `log` array — it names every league the function found and how
-many teams it processed per league. If it's not the 5 leagues you
-subscribed to, or `upserted` is 0, stop and check before scheduling it
-to run unattended. Also sanity-check a handful of real rows:
+Keep invoking it until a response says `"done": true` — that's a full
+pass across every team. Read the `log` array on the first call — it
+names every league the function found. If it's not the 5 leagues you
+subscribed to, or `upserted_this_run` stays 0, stop and check before
+continuing. Once fully done, sanity-check a handful of real rows:
 ```sql
 select name, club, league, position, rating, current_price, nationality
 from players
@@ -202,13 +208,15 @@ select vault.create_secret('YOUR_SERVICE_ROLE_KEY', 'service_role_key');
 
 ### 6. Schedule a run
 
-Unlike Phase 1 (daily), this is cheap enough on a paid plan to run more
-or less often depending on how fast you want new transfers/rating
-changes to show up — once a day is a reasonable start:
+Because each call only processes `TEAM_BUDGET` (15) teams, a run once a
+day would take roughly a week to complete one full pass across ~106
+teams. Schedule it hourly instead — at 15 teams/call that's a full pass
+every ~7 hours, so rosters and ratings stay reasonably fresh without
+needing a bigger per-call budget:
 ```sql
 select cron.schedule(
-  'sync-sportmonks-players-daily',
-  '0 7 * * *', -- 7am UTC daily; adjust to taste, offset from Phase 1's 6am
+  'sync-sportmonks-players-hourly',
+  '0 * * * *', -- hourly
   $$
   select net.http_post(
     url := 'https://eqflsykuoyuzbcixayjl.supabase.co/functions/v1/sync-sportmonks-players',
