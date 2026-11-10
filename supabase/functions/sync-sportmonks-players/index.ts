@@ -19,12 +19,13 @@
 //   matching the FPL sync's philosophy that price only moves for a
 //   specific reason, never silently alongside an unrelated refresh.
 // - Sportmonks' `rating` statistic (type_id 118, "the player's match
-//   ratings across the season") is assumed to be a 0-10-ish scale and
-//   scaled *10 the same way the old API-Football plan treated its
-//   0-10 `games.rating` field. UNVERIFIED against a real response as of
-//   writing -- check the first real run's output before trusting it;
-//   if ratings all clamp to the 40 floor or 99 ceiling, the scale
-//   assumption is wrong and this needs adjusting.
+//   ratings across the season") IS confirmed to be a 0-10-ish scale
+//   (real run, 2026-11-10: raw values 5.7-7.5 across 330 players). A
+//   flat x10 (the old API-Football-style treatment, tried first) was
+//   wrong, not for the decode but for the spread: real season-average
+//   ratings cluster far too tightly to differentiate the app's 40-99
+//   tier system, so scaleRating() below rescales a reasoned realistic
+//   range onto 40-99 instead of a flat x10. See its own comment.
 // - position_id / detailed_position_id are decoded via a small hardcoded
 //   table (only 16 values total, documented at
 //   https://docs.sportmonks.com/v3/definitions/types/position-types),
@@ -107,6 +108,29 @@ function extractRating(statistics: any[], seasonId: number): number | null {
   return raw;
 }
 
+// Confirmed against a real run (2026-11-10, 330 players across the 5
+// subscribed leagues): raw season-average match ratings span roughly
+// 5.7-7.5, clustering tightly (p10 6.5, p50 6.7, p90 7.1) -- a flat x10
+// (the old API-Football-style treatment) compresses almost the entire
+// roster into the app's lowest card tier ("sand", rating < 75), since
+// real match-rating averages just don't spread anywhere near as wide as
+// a 0-10 scale implies. RATING_LOW/HIGH are a reasoned domain estimate
+// of the realistic range (replacement-level fringe player to a
+// genuinely excellent season), not fitted to that one sample, so this
+// should hold up as more players/seasons sync in. Not empirically
+// tuned against actual tier distribution yet -- revisit if most players
+// still end up bunched in one tier once there's a full dataset.
+const RATING_LOW = 5.8;
+const RATING_HIGH = 7.6;
+const OUT_LOW = 42;
+const OUT_HIGH = 96;
+
+function scaleRating(raw: number): number {
+  const t = (raw - RATING_LOW) / (RATING_HIGH - RATING_LOW);
+  const scaled = OUT_LOW + t * (OUT_HIGH - OUT_LOW);
+  return Math.max(40, Math.min(99, Math.round(scaled)));
+}
+
 Deno.serve(async () => {
   const token = Deno.env.get("SPORTMONKS_API_TOKEN");
   if (!token) {
@@ -183,7 +207,7 @@ Deno.serve(async () => {
         if (!p) continue;
 
         const rawRating = extractRating(p.statistics, team.seasonId);
-        const rating100 = rawRating !== null ? Math.max(40, Math.min(99, Math.round(rawRating * 10))) : null;
+        const rating100 = rawRating !== null ? scaleRating(rawRating) : null;
         const seedPrice = rating100 !== null ? Math.max(10, Math.round(rating100 * 2)) : 10;
 
         const positionName =
