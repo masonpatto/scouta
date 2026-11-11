@@ -31,6 +31,7 @@
 do $$
 declare
   pair record;
+  v_new record;
   merged_count integer := 0;
 begin
   create temporary table dup_pairs (old_id uuid, new_id uuid) on commit drop;
@@ -99,29 +100,35 @@ begin
     --    canonical row's real history.
     delete from public.price_history where player_id = pair.new_id;
 
-    -- 5. Enrich the canonical row with Sportmonks metadata, coalescing so
+    -- 5. Capture the duplicate's metadata, then delete it BEFORE writing
+    --    its api_player_id onto the canonical row -- the unique index on
+    --    api_player_id is checked immediately (not deferred), so setting
+    --    old.api_player_id while the duplicate row still held that same
+    --    value would collide with itself even though the duplicate was
+    --    about to be removed in the same transaction.
+    select * into v_new from public.players where id = pair.new_id;
+
+    delete from public.players where id = pair.new_id;
+
+    -- 6. Enrich the canonical row with Sportmonks metadata, coalescing so
     --    a field Sportmonks hasn't populated yet (e.g. rating can be null
     --    for a player not yet reached by the sync) never regresses a
     --    value the old row already had.
-    update public.players old
-    set api_player_id = new.api_player_id,
-        name = new.name,
-        full_name = coalesce(new.full_name, old.full_name),
-        age = coalesce(new.age, old.age),
-        date_of_birth = coalesce(new.date_of_birth, old.date_of_birth),
-        nationality = coalesce(new.nationality, old.nationality),
-        photo_url = coalesce(new.photo_url, old.photo_url),
-        position = coalesce(new.position, old.position),
-        club = coalesce(new.club, old.club),
-        league = coalesce(new.league, old.league),
-        rating = coalesce(new.rating, old.rating),
+    update public.players
+    set api_player_id = v_new.api_player_id,
+        name = v_new.name,
+        full_name = coalesce(v_new.full_name, full_name),
+        age = coalesce(v_new.age, age),
+        date_of_birth = coalesce(v_new.date_of_birth, date_of_birth),
+        nationality = coalesce(v_new.nationality, nationality),
+        photo_url = coalesce(v_new.photo_url, photo_url),
+        position = coalesce(v_new.position, position),
+        club = coalesce(v_new.club, club),
+        league = coalesce(v_new.league, league),
+        rating = coalesce(v_new.rating, rating),
         active = true,
         last_synced_at = now()
-    from public.players new
-    where old.id = pair.old_id and new.id = pair.new_id;
-
-    -- 6. Fully absorbed -- delete the duplicate.
-    delete from public.players where id = pair.new_id;
+    where id = pair.old_id;
 
     merged_count := merged_count + 1;
   end loop;
