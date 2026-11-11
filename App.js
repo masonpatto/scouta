@@ -7,7 +7,7 @@ import {
 import * as Font from 'expo-font';
 import * as SecureStore from 'expo-secure-store';
 import { Feather } from '@expo/vector-icons';
-import Svg, { Circle, Defs, Line, LinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, LinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 // ---------- Talking to Supabase Auth directly via fetch, no SDK needed ----------
 const SUPABASE_URL = 'https://eqflsykuoyuzbcixayjl.supabase.co';
@@ -500,9 +500,8 @@ function CoinIcon({ size = 22 }) {
   );
 }
 
-// ---------- Card-chip icon: a real SVG EMV-style chip with a gold
-// gradient and crisp contact-pad lines, replacing a blurry generated
-// raster PNG whose grid lines looked soft/pixelated at render size. ----------
+// ---------- Card-chip icon: a plain gold-gradient rounded rect, no
+// contact-pad lines -- a cleaner, simpler mark than a literal EMV chip. ----------
 function ChipIcon({ width = 26, height = 19 }) {
   return (
     <Svg width={width} height={height} viewBox="0 0 26 19">
@@ -514,13 +513,6 @@ function ChipIcon({ width = 26, height = 19 }) {
         </LinearGradient>
       </Defs>
       <Rect x="0.5" y="0.5" width="25" height="18" rx="4" fill="url(#chipFaceGradient)" stroke="#8a6d2f" strokeWidth="0.6" />
-      <Rect x="4" y="4" width="18" height="11" rx="2" fill="none" stroke="rgba(138,109,47,0.55)" strokeWidth="0.6" />
-      <Line x1="13" y1="4" x2="13" y2="15" stroke="rgba(138,109,47,0.55)" strokeWidth="0.6" />
-      <Line x1="4" y1="9.5" x2="22" y2="9.5" stroke="rgba(138,109,47,0.55)" strokeWidth="0.6" />
-      <Line x1="8" y1="0.5" x2="8" y2="4" stroke="rgba(138,109,47,0.55)" strokeWidth="0.6" />
-      <Line x1="18" y1="0.5" x2="18" y2="4" stroke="rgba(138,109,47,0.55)" strokeWidth="0.6" />
-      <Line x1="8" y1="15" x2="8" y2="18.5" stroke="rgba(138,109,47,0.55)" strokeWidth="0.6" />
-      <Line x1="18" y1="15" x2="18" y2="18.5" stroke="rgba(138,109,47,0.55)" strokeWidth="0.6" />
     </Svg>
   );
 }
