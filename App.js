@@ -3121,7 +3121,7 @@ const styles = StyleSheet.create({
   },
   modeIconText: { fontSize: 19 },
   heroButtonDisabled: { opacity: 0.4 },
-  progressRow: { flexDirection: 'row', gap: 3, marginBottom: 10, marginTop: 6 },
+  progressRow: { flexDirection: 'row', gap: 3, marginBottom: 10, marginTop: 6, marginHorizontal: 14 },
   progressDot: { flex: 1, height: 2.5, borderRadius: 1.5, backgroundColor: 'rgba(20,18,14,0.1)' },
   progressDotFilled: { backgroundColor: '#161410' },
   quizCounter: { position: 'absolute', top: 60, right: 28, fontSize: 60, fontWeight: '800', color: 'rgba(20,18,14,0.05)' },
