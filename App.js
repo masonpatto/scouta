@@ -923,6 +923,58 @@ function AppInner() {
   const [watchlist, setWatchlist] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  // Cross-platform replacement for Alert.prompt, which is iOS-only --
+  // on web (and Android) it isn't a function at all, so Buy/Sell/thesis
+  // editing/forgot-password all silently threw and did nothing there.
+  const [promptState, setPromptState] = useState(null); // { title, message, keyboardType, submitLabel, onSubmit } | null
+  const [promptValue, setPromptValue] = useState('');
+  function showPrompt({ title, message, defaultValue = '', keyboardType = 'default', submitLabel = 'OK', onSubmit }) {
+    setPromptValue(defaultValue);
+    setPromptState({ title, message, keyboardType, submitLabel, onSubmit });
+  }
+
+  // Rendered at every screen that can call showPrompt (standalone login,
+  // the logged-in app) -- a plain Modal works identically on every
+  // platform, unlike Alert.prompt.
+  function PromptModalRenderer() {
+    if (!promptState) return null;
+    return (
+      <Modal visible transparent animationType="fade" onRequestClose={() => setPromptState(null)}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.promptBackdrop}
+        >
+          <View style={styles.promptCard}>
+            <Text style={styles.promptTitle}>{promptState.title}</Text>
+            {promptState.message ? <Text style={styles.promptMessage}>{promptState.message}</Text> : null}
+            <TextInput
+              style={[styles.heroInput, { marginHorizontal: 0 }]}
+              value={promptValue}
+              onChangeText={setPromptValue}
+              keyboardType={promptState.keyboardType}
+              autoFocus
+              selectTextOnFocus
+            />
+            <View style={styles.promptButtonRow}>
+              <TouchableOpacity style={styles.promptCancelBtn} onPress={() => setPromptState(null)}>
+                <Text style={styles.promptCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.promptSubmitBtn}
+                onPress={() => {
+                  const { onSubmit } = promptState;
+                  setPromptState(null);
+                  onSubmit(promptValue);
+                }}
+              >
+                <Text style={styles.promptSubmitText}>{promptState.submitLabel}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    );
+  }
   const [leaderboard, setLeaderboard] = useState([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [claimedMilestones, setClaimedMilestones] = useState([]);
@@ -1183,10 +1235,12 @@ function AppInner() {
   }
 
   async function handleBuy(player) {
-    Alert.prompt(
-      `Invest in ${player.name}`,
-      'How many SC would you like to invest?',
-      async (input) => {
+    showPrompt({
+      title: `Invest in ${player.name}`,
+      message: 'How many SC would you like to invest?',
+      keyboardType: 'numeric',
+      submitLabel: 'Invest',
+      onSubmit: async (input) => {
         const amount = parseFloat(input);
         if (!amount || amount <= 0) return;
         setActionBusy(true);
@@ -1205,17 +1259,17 @@ function AppInner() {
           setActionBusy(false);
         }
       },
-      'plain-text',
-      '',
-      'numeric'
-    );
+    });
   }
 
   async function handleSell(holding) {
-    Alert.prompt(
-      `Sell ${holding.players.name}`,
-      `You own ${holding.shares.toFixed(2)} shares. How many would you like to sell?`,
-      async (input) => {
+    showPrompt({
+      title: `Sell ${holding.players.name}`,
+      message: `You own ${holding.shares.toFixed(2)} shares. How many would you like to sell?`,
+      defaultValue: String(holding.shares),
+      keyboardType: 'numeric',
+      submitLabel: 'Sell',
+      onSubmit: async (input) => {
         const shares = parseFloat(input);
         if (!shares || shares <= 0) return;
         setActionBusy(true);
@@ -1237,20 +1291,19 @@ function AppInner() {
           setActionBusy(false);
         }
       },
-      'plain-text',
-      String(holding.shares),
-      'numeric'
-    );
+    });
   }
 
   // Real Scout Journal - a direct PATCH to holdings.thesis, which the
   // RLS policy + lockdown trigger in scouta_schema_part3.sql allow
   // (that column only; shares/avg_buy_price stay protected).
   async function handleEditThesis(holding) {
-    Alert.prompt(
-      `Your thesis on ${holding.players.name}`,
-      'Why did you buy this player?',
-      async (input) => {
+    showPrompt({
+      title: `Your thesis on ${holding.players.name}`,
+      message: 'Why did you buy this player?',
+      defaultValue: holding.thesis || '',
+      submitLabel: 'Save',
+      onSubmit: async (input) => {
         if (input === null || input === undefined) return; // cancelled
         try {
           const res = await fetch(`${SUPABASE_URL}/rest/v1/holdings?id=eq.${holding.id}`, {
@@ -1268,9 +1321,7 @@ function AppInner() {
           Alert.alert('Error', e.message);
         }
       },
-      'plain-text',
-      holding.thesis || ''
-    );
+    });
   }
 
   async function fetchPlayers() {
@@ -1412,10 +1463,12 @@ function AppInner() {
   }
 
   async function handleForgotPassword() {
-    Alert.prompt(
-      'Reset your password',
-      "Enter your account's email and we'll send you a reset link.",
-      async (input) => {
+    showPrompt({
+      title: 'Reset your password',
+      message: "Enter your account's email and we'll send you a reset link.",
+      defaultValue: email,
+      submitLabel: 'Send link',
+      onSubmit: async (input) => {
         const resetEmail = (input || '').trim();
         if (!resetEmail) return;
         try {
@@ -1425,9 +1478,7 @@ function AppInner() {
           Alert.alert('Error', e.message);
         }
       },
-      'plain-text',
-      email
-    );
+    });
   }
 
   // ---------- Still restoring a persisted session - avoid flashing the
@@ -1503,6 +1554,7 @@ function AppInner() {
             </TouchableOpacity>
           </View>
         </SafeAreaView>
+        <PromptModalRenderer />
       </KeyboardAvoidingView>
     );
   }
@@ -2837,6 +2889,7 @@ function AppInner() {
             </SafeAreaView>
           </View>
         </Modal>
+        <PromptModalRenderer />
       </SafeAreaView>
     );
   }
@@ -2920,6 +2973,24 @@ const styles = StyleSheet.create({
   },
   notifModalTitle: { fontSize: 18, fontWeight: '800', color: '#161410', letterSpacing: -0.3 },
   notifModalClose: { fontSize: 18, color: '#918c81', fontWeight: '700' },
+  promptBackdrop: {
+    flex: 1, backgroundColor: 'rgba(22,20,16,0.4)', justifyContent: 'center', padding: 24,
+  },
+  promptCard: {
+    backgroundColor: '#faf9f6', borderRadius: 24, padding: 22,
+  },
+  promptTitle: { fontSize: 17, fontWeight: '800', color: '#161410', marginBottom: 6, letterSpacing: -0.3 },
+  promptMessage: { fontSize: 13.5, color: '#57534a', marginBottom: 16, lineHeight: 19 },
+  promptButtonRow: { flexDirection: 'row', gap: 10 },
+  promptCancelBtn: {
+    flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: 'center',
+    backgroundColor: '#ffffff', borderWidth: 1.5, borderColor: '#e8e3d8',
+  },
+  promptCancelText: { fontSize: 14.5, fontWeight: '700', color: '#57534a' },
+  promptSubmitBtn: {
+    flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: 'center', backgroundColor: '#161410',
+  },
+  promptSubmitText: { fontSize: 14.5, fontWeight: '700', color: '#faf9f6' },
   notifRow: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
     paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee9dd',
