@@ -100,6 +100,10 @@ const TIER_BG_URIS = {
 // -- only the surface material and accent colour change. That's the
 // discipline that keeps a tiered set feeling like one coherent system
 // rather than several unrelated designs.
+// Quick-pick amounts for the Buy modal, scaled to the 1,000 SC starting
+// capital rather than arbitrary round numbers.
+const BUY_AMOUNT_PRESETS = [25, 50, 100, 250];
+
 const TIERS = {
   elite:    { bg: 'elite',    label: 'ELITE',    accent: '#e2c47c', text: '#f5f2ec', dim: 'rgba(245,242,236,0.5)',  border: 'rgba(226,196,124,0.35)', gain: '#6fcf97' },
   platinum: { bg: 'platinum', label: 'PLATINUM', accent: '#3d4750', text: '#1a1710', dim: 'rgba(60,50,30,0.55)',    border: 'rgba(120,130,140,0.35)', gain: '#2d7a4f' },
@@ -865,6 +869,13 @@ function AppInner() {
     setPromptState({ title, message, keyboardType, submitLabel, onSubmit });
   }
 
+  // Dedicated Buy modal (quick-amount chips + an "All" shortcut), instead
+  // of routing Buy through the generic plain-text showPrompt above -- a
+  // real trading app's single highest-frequency action deserves more than
+  // a bare text field.
+  const [buyModalPlayer, setBuyModalPlayer] = useState(null);
+  const [buyAmount, setBuyAmount] = useState('');
+
   // Rendered at every screen that can call showPrompt (standalone login,
   // the logged-in app) -- a plain Modal works identically on every
   // platform, unlike Alert.prompt.
@@ -900,6 +911,112 @@ function AppInner() {
                 }}
               >
                 <Text style={styles.promptSubmitText}>{promptState.submitLabel}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    );
+  }
+
+  function BuyModalRenderer() {
+    if (!buyModalPlayer) return null;
+    const player = buyModalPlayer;
+    const tier = tierFor(player.rating, player.age);
+    const amountNum = parseFloat(buyAmount) || 0;
+    const fee = Math.round(amountNum * 0.02 * 100) / 100;
+    const sharesPreview = player.current_price > 0 ? Math.max(0, amountNum - fee) / player.current_price : 0;
+    const maxCash = Math.floor((cash || 0) * 100) / 100;
+    const canSubmit = amountNum > 0 && !actionBusy;
+
+    return (
+      <Modal visible transparent animationType="fade" onRequestClose={() => setBuyModalPlayer(null)}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.promptBackdrop}
+        >
+          <View style={styles.buyCard}>
+            <View style={styles.buyCardHeader}>
+              <Image source={{ uri: CHIP_URI }} style={styles.chipIcon} />
+              <View style={styles.ratingBadge}>
+                <Text style={[styles.ratingNumber, { color: player.rating ? tier.accent : tier.dim }]}>
+                  {player.rating || '—'}
+                </Text>
+                <Text style={[styles.ratingLabel, { color: tier.dim }]}>RATING</Text>
+              </View>
+            </View>
+            <Text style={styles.buyPlayerName}>{player.name}</Text>
+            <Text style={styles.buyPlayerSub}>{[player.position, player.club].filter(Boolean).join(' · ')}</Text>
+            <View style={styles.buyPriceRow}>
+              <Text style={styles.buyPriceMain}>
+                {player.current_price != null ? Math.round(player.current_price).toLocaleString('en-US') : '—'}
+              </Text>
+              <Text style={styles.buyPriceSuffix}> SC / share</Text>
+            </View>
+
+            <Text style={styles.buyAmountLabel}>Invest</Text>
+            <View style={styles.buyChipsRow}>
+              {BUY_AMOUNT_PRESETS.map((v) => {
+                const disabled = v > maxCash;
+                const active = amountNum === v;
+                return (
+                  <TouchableOpacity
+                    key={v}
+                    style={[styles.buyChip, active && styles.buyChipActive, disabled && styles.buyChipDisabled]}
+                    onPress={() => setBuyAmount(String(v))}
+                    disabled={disabled}
+                  >
+                    <Text style={[styles.buyChipText, active && styles.buyChipTextActive]}>{v}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+              <TouchableOpacity
+                style={[
+                  styles.buyChip,
+                  styles.buyChipMax,
+                  amountNum > 0 && amountNum === maxCash && styles.buyChipActive,
+                  maxCash < 5 && styles.buyChipDisabled,
+                ]}
+                onPress={() => setBuyAmount(String(maxCash))}
+                disabled={maxCash < 5}
+              >
+                <Text style={[styles.buyChipText, amountNum > 0 && amountNum === maxCash && styles.buyChipTextActive]}>
+                  All In
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.buyCustomInputWrap}>
+              <TextInput
+                style={styles.buyCustomInput}
+                value={buyAmount}
+                onChangeText={setBuyAmount}
+                keyboardType="numeric"
+                placeholder="Custom amount"
+                placeholderTextColor="#b4ad9c"
+              />
+              <Text style={styles.buyCustomInputSuffix}>SC</Text>
+            </View>
+
+            {amountNum > 0 ? (
+              <View style={styles.buyPreviewRow}>
+                <Text style={styles.buyPreviewText}>≈ {sharesPreview.toFixed(2)} shares</Text>
+                <Text style={styles.buyPreviewText}>Fee {fee.toFixed(2)} SC</Text>
+              </View>
+            ) : null}
+
+            <Text style={styles.buyAvailableText}>Available: {formatSC(cash || 0, 2)}</Text>
+
+            <View style={styles.promptButtonRow}>
+              <TouchableOpacity style={styles.promptCancelBtn} onPress={() => setBuyModalPlayer(null)}>
+                <Text style={styles.promptCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.promptSubmitBtn, !canSubmit && styles.heroButtonDisabled]}
+                onPress={() => submitBuy()}
+                disabled={!canSubmit}
+              >
+                <Text style={styles.promptSubmitText}>{actionBusy ? 'Investing…' : 'Invest'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1166,32 +1283,32 @@ function AppInner() {
     return data;
   }
 
-  async function handleBuy(player) {
-    showPrompt({
-      title: `Invest in ${player.name}`,
-      message: 'How many SC would you like to invest?',
-      keyboardType: 'numeric',
-      submitLabel: 'Invest',
-      onSubmit: async (input) => {
-        const amount = parseFloat(input);
-        if (!amount || amount <= 0) return;
-        setActionBusy(true);
-        try {
-          const result = await callRpc('buy_player', { p_player_id: player.id, p_amount: amount });
-          if (!result.ok) {
-            Alert.alert('Could not buy', result.reason);
-          } else {
-            Alert.alert('Bought', `Invested ${amount} SC in ${player.name}.`);
-            logEvent('buy_player', { player_id: player.id, amount });
-            await Promise.all([fetchCash(), fetchHoldings(), fetchTransactions()]);
-          }
-        } catch (e) {
-          Alert.alert('Error', e.message);
-        } finally {
-          setActionBusy(false);
-        }
-      },
-    });
+  function handleBuy(player) {
+    setBuyAmount('');
+    setBuyModalPlayer(player);
+  }
+
+  async function submitBuy(amountOverride) {
+    const player = buyModalPlayer;
+    const raw = amountOverride !== undefined ? amountOverride : parseFloat(buyAmount);
+    const amount = Math.round(raw * 100) / 100;
+    if (!player || !amount || amount <= 0) return;
+    setActionBusy(true);
+    try {
+      const result = await callRpc('buy_player', { p_player_id: player.id, p_amount: amount });
+      if (!result.ok) {
+        Alert.alert('Could not buy', result.reason);
+      } else {
+        setBuyModalPlayer(null);
+        Alert.alert('Bought', `Invested ${amount} SC in ${player.name}.`);
+        logEvent('buy_player', { player_id: player.id, amount });
+        await Promise.all([fetchCash(), fetchHoldings(), fetchTransactions()]);
+      }
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setActionBusy(false);
+    }
   }
 
   async function handleSell(holding) {
@@ -2844,6 +2961,7 @@ function AppInner() {
           </View>
         </Modal>
         <PromptModalRenderer />
+        <BuyModalRenderer />
       </SafeAreaView>
     );
   }
@@ -2927,6 +3045,34 @@ const styles = StyleSheet.create({
     flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: 'center', backgroundColor: '#161410',
   },
   promptSubmitText: { fontSize: 14.5, fontWeight: '700', color: '#faf9f6' },
+  buyCard: { backgroundColor: '#faf9f6', borderRadius: 24, padding: 22 },
+  buyCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 },
+  buyPlayerName: { fontSize: 20, fontWeight: '800', color: '#161410', letterSpacing: -0.3 },
+  buyPlayerSub: { fontSize: 13, color: '#8a8578', marginTop: 2, marginBottom: 10 },
+  buyPriceRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 18 },
+  buyPriceMain: { fontSize: 22, fontWeight: '800', color: '#161410' },
+  buyPriceSuffix: { fontSize: 13, fontWeight: '600', color: '#8a8578' },
+  buyAmountLabel: { fontSize: 12, fontWeight: '700', color: '#918c81', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
+  buyChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  buyChip: {
+    paddingVertical: 10, paddingHorizontal: 16, borderRadius: 14,
+    backgroundColor: '#ffffff', borderWidth: 1.5, borderColor: '#e8e3d8',
+  },
+  buyChipActive: { backgroundColor: '#161410', borderColor: '#161410' },
+  buyChipDisabled: { opacity: 0.35 },
+  buyChipMax: { backgroundColor: '#f1dfd4', borderColor: '#e2c47c' },
+  buyChipText: { fontSize: 14, fontWeight: '700', color: '#161410' },
+  buyChipTextActive: { color: '#faf9f6' },
+  buyCustomInputWrap: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#ffffff',
+    borderWidth: 1.5, borderColor: '#e8e3d8', borderRadius: 14,
+    paddingHorizontal: 16, marginBottom: 12,
+  },
+  buyCustomInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: '#161410' },
+  buyCustomInputSuffix: { fontSize: 13, fontWeight: '700', color: '#918c81' },
+  buyPreviewRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  buyPreviewText: { fontSize: 12.5, color: '#57534a' },
+  buyAvailableText: { fontSize: 12, color: '#918c81', marginBottom: 16 },
   notifRow: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
     paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee9dd',
