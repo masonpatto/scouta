@@ -18,42 +18,48 @@
 //   untouched; this job only ever refreshes roster/rating metadata,
 //   matching the FPL sync's philosophy that price only moves for a
 //   specific reason, never silently alongside an unrelated refresh.
-// - Sportmonks' `rating` statistic (type_id 118, "the player's match
-//   ratings across the season") IS confirmed to be a 0-10-ish scale
-//   (real run, 2026-11-10: raw values 5.7-7.5 across 330 players). A
-//   flat x10 (the old API-Football-style treatment, tried first) was
-//   wrong, not for the decode but for the spread: real season-average
-//   ratings cluster far too tightly to differentiate the app's 40-99
-//   tier system, so scaleRating() below rescales a reasoned realistic
-//   range onto 40-99 instead of a flat x10. See its own comment.
-// - Real users reported specific, verifiable cases of the opposite
-//   problem: fringe players with only 1-2 appearances this season
-//   landing at the TOP of the scale (94-99), above established regular
-//   starters. Confirmed live (2026-11-11) against the real Sportmonks
-//   API: this is because `rating` (type_id 118) is an unweighted
-//   average with no reliability adjustment, so a 2-game fluke counts
-//   the same as a 20-game season. shrinkRating() below pulls a raw
-//   rating toward a league-average baseline proportional to how few
-//   appearances (type_id 321, confirmed via the real /core/types
-//   catalog) back it up, before scaleRating() runs.
 // - position_id / detailed_position_id are decoded via a small hardcoded
 //   table (only 16 values total, documented at
 //   https://docs.sportmonks.com/v3/definitions/types/position-types),
 //   not a runtime /core/types call -- simpler than API-Football's
 //   approach and these IDs are stable, documented constants.
 // - IS resumable across invocations via the `sync_state` table, capped
-//   at TEAM_BUDGET teams per run. The original version of this file
-//   assumed rate limits (2,000+ req/hour) were the only constraint and
-//   tried the whole ~100-110 teams in one invocation -- wrong: Supabase
-//   Edge Functions cap a single invocation at 150s wall-clock AND 2s of
-//   actual CPU time (async I/O doesn't count, but JSON-parsing/iterating
-//   every player's full statistics payload across 100+ teams does), and
-//   that first version blew past one or both, hanging for ages and then
-//   failing. Also scopes the `player.statistics` include to just the
-//   current season (`playerStatisticSeasons` filter) instead of a
-//   player's entire career, cutting payload size and CPU/parse cost
-//   substantially. Call it repeatedly (or let the cron schedule call it
-//   repeatedly) until a response says `"done": true`.
+//   at TEAM_BUDGET teams per run. Supabase Edge Functions cap a single
+//   invocation at 150s wall-clock AND 2s of actual CPU time (async I/O
+//   doesn't count, but JSON-parsing/iterating every player's full
+//   statistics payload across 100+ teams does), so this scopes the
+//   `player.statistics` include to just the current season
+//   (`playerStatisticSeasons` filter). Call it repeatedly (or let the
+//   cron schedule call it repeatedly) until a response says
+//   `"done": true`.
+//
+// Rating pipeline (REWRITTEN 2026-11-11 after two real, user-caught
+// failures -- both are documented at the relevant function because the
+// history matters for whoever touches this next):
+// 1. Sportmonks' own `rating` stat (type_id 118) is a single unweighted
+//    per-match average with no reliability adjustment, and, separately
+//    from sample size, doesn't track real-world reputation at all: a
+//    very good player at a mid-table club (lots of individual defensive/
+//    passing actions in a possession-heavy system) can out-rate an
+//    established star at a much bigger club. Relying on it alone was
+//    the first failure (fringe 2-game players hitting the scale
+//    ceiling), fixed with shrinkRating-style reliability shrinkage.
+// 2. A from-scratch replacement built on per-90 underlying stats (goals,
+//    tackles, key passes, etc.) was the second failure: per-90
+//    extrapolation on a small minutes sample is EXTREMELY noisy (a
+//    2-game defender's "11.5 clearances per 90" is just a handful of
+//    real clearances blown up by the per-90 math), and it wasn't
+//    shrunk the same way the rating was -- it blew straight through the
+//    scale ceiling for exactly the player it was meant to fix.
+// 3. Final design: blend a shrunk Sportmonks rating with a SEPARATELY
+//    shrunk, position-weighted production score (both get the identical
+//    reliability treatment now), then add a small club-prestige bonus
+//    for a short list of genuinely elite clubs -- the one signal no
+//    per-match stat captures -- and a league-strength multiplier.
+//    Validated against real, named players (Rice, Fernandes, Haaland,
+//    Van Dijk, Groß, an obscure 2-game fringe defender) via a throwaway
+//    debug Edge Function before this went live; see scaleRating()'s own
+//    comment for the resulting numbers.
 //
 // Deploy: paste this file's contents into a new Edge Function named
 // "sync-sportmonks-players" in the Supabase dashboard. Requires one
@@ -76,11 +82,15 @@ const DETAILED_POSITION_NAMES: Record<number, string> = {
   157: "Left Midfield", 158: "Right Midfield", 163: "Secondary Striker",
 };
 
-const STAT_TYPE_RATING = 118;
-// Confirmed live against the real Sportmonks /core/types catalog
-// (2026-11-11), not guessed: id 119 is "Minutes Played", id 321 is
-// "Appearances".
-const STAT_TYPE_APPEARANCES = 321;
+// Confirmed live against the real Sportmonks /core/types and
+// /definitions/types/statistics catalogs (2026-11-11), not guessed.
+const STAT = {
+  GOALS: 52, ASSISTS: 79, KEY_PASSES: 117, DRIBBLES_OK: 109,
+  TACKLES: 78, INTERCEPTIONS: 100, CLEARANCES: 101, AERIALS_WON: 107,
+  PASS_ACC: 1584, PASS_ACC_ALT: 82,
+  SAVES: 57, CLEAN_SHEETS: 194, GK_CLEAN_SHEETS: 195,
+  RATING: 118, MINUTES: 119, APPEARANCES: 321,
+};
 
 function num(v: unknown): number | null {
   if (v === null || v === undefined) return null;
@@ -108,21 +118,61 @@ async function setState(supabase: ReturnType<typeof createClient>, key: string, 
   await supabase.from("sync_state").upsert({ key, value, updated_at: new Date().toISOString() });
 }
 
-// Pulls the season-aggregate `rating` detail (type_id 118) and the
-// season's appearance count (type_id 321) out of a player's `statistics`
-// array for the given season_id, if present.
-function extractRatingAndAppearances(
-  statistics: any[],
-  seasonId: number
-): { rawRating: number | null; appearances: number } {
-  const row = (statistics ?? []).find((s: any) => s.season_id === seasonId);
-  if (!row) return { rawRating: null, appearances: 0 };
-  const ratingDetail = (row.details ?? []).find((d: any) => d.type_id === STAT_TYPE_RATING);
-  const rawRating = ratingDetail ? num(ratingDetail.value?.average) ?? num(ratingDetail.value?.total) : null;
-  const appsDetail = (row.details ?? []).find((d: any) => d.type_id === STAT_TYPE_APPEARANCES);
-  const appearances = num(appsDetail?.value?.total) ?? 0;
-  return { rawRating, appearances };
+function statTotal(details: any[], typeId: number): number {
+  const d = (details ?? []).find((x: any) => x.type_id === typeId);
+  return num(d?.value?.total) ?? 0;
 }
+function statRaw(details: any[], typeId: number): any {
+  const d = (details ?? []).find((x: any) => x.type_id === typeId);
+  return d?.value ?? null;
+}
+function statPercent(details: any[], typeId: number): number | null {
+  const d = (details ?? []).find((x: any) => x.type_id === typeId);
+  return num(d?.value?.average) ?? num(d?.value?.total) ?? null;
+}
+function perNinety(total: number, minutes: number): number {
+  return minutes > 0 ? (total / minutes) * 90 : 0;
+}
+function clamp(v: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+type Role = "GK" | "DEF" | "MID" | "FWD";
+function roleFor(positionName: string | null): Role {
+  if (!positionName) return "MID";
+  if (positionName === "Goalkeeper") return "GK";
+  if (["Centre Back", "Right Back", "Left Back", "Defender"].includes(positionName)) return "DEF";
+  if (["Centre Forward", "Left Wing", "Right Wing", "Secondary Striker", "Attacker"].includes(positionName)) return "FWD";
+  return "MID";
+}
+
+// Reasoned against real competitive standing (UEFA coefficients), not a
+// guess: the "big 4" leagues are treated as roughly equal top tier; the
+// Championship, as England's second tier, is clearly a level below.
+const LEAGUE_STRENGTH: Record<string, number> = {
+  "Premier League": 1.0,
+  "La Liga": 1.0,
+  "Bundesliga": 0.97,
+  "Serie A": 0.97,
+  "Championship": 0.82,
+};
+function leagueStrength(leagueName: string | null): number {
+  return leagueName ? (LEAGUE_STRENGTH[leagueName] ?? 0.85) : 0.85;
+}
+
+// A handful of genuinely elite clubs across the 5 subscribed leagues --
+// the one signal no per-match stat captures: a very good player at a
+// mid-table club (lots of individual defensive/passing actions in a
+// possession-heavy system) can out-produce a very good player at a much
+// bigger club on raw per-90 numbers alone, without being the better
+// player by real-world reputation.
+const ELITE_CLUBS = new Set([
+  "Manchester City", "Arsenal", "Liverpool", "Manchester United", "Chelsea", "Tottenham Hotspur",
+  "Real Madrid", "Barcelona", "Atlético Madrid",
+  "Bayern Munich", "Borussia Dortmund",
+  "Juventus", "Inter", "AC Milan", "Napoli",
+]);
+const ELITE_CLUB_BONUS = 0.3;
 
 // A player's `rating` from Sportmonks is a plain, unweighted average
 // across however many matches they've played this season -- no
@@ -130,39 +180,108 @@ function extractRatingAndAppearances(
 // player with just 2 appearances (180 minutes) averaged 7.52, landing
 // at the very top of the scale right alongside players with a full
 // season's worth of appearances behind their average. Standard
-// sports-analytics fix: shrink the raw rating toward a league-average
-// baseline, proportional to how few appearances back it up, using a
-// player with SHRINKAGE_GAMES "virtual" average appearances as the
-// prior. A 2-appearance fluke gets pulled hard toward the baseline; an
-// established 20+-appearance season barely moves.
-const BASELINE_RAW_RATING = 6.6; // ~ median raw rating across the first real sync (p50 6.7-6.8)
+// sports-analytics fix: shrink a raw value toward a baseline,
+// proportional to how few appearances back it up, using a player with
+// SHRINKAGE_GAMES "virtual" average appearances as the prior. The SAME
+// function is used for both the Sportmonks rating and the production
+// score below -- the second real bug here was shrinking only the
+// former and not the latter.
+const BASELINE_RAW_RATING = 6.6; // ~ median raw Sportmonks rating across the first real sync
+const BASELINE_PRODUCTION = 5.8; // matches productionScore()'s own intercept -- "zero contribution" level
 const SHRINKAGE_GAMES = 10;
-
-function shrinkRating(rawRating: number, appearances: number): number {
-  return (rawRating * appearances + BASELINE_RAW_RATING * SHRINKAGE_GAMES) / (appearances + SHRINKAGE_GAMES);
+function shrink(value: number, baseline: number, appearances: number): number {
+  return (value * appearances + baseline * SHRINKAGE_GAMES) / (appearances + SHRINKAGE_GAMES);
 }
 
-// Confirmed against a real run (2026-11-10, 330 players across the 5
-// subscribed leagues): raw season-average match ratings span roughly
-// 5.7-7.5, clustering tightly (p10 6.5, p50 6.7, p90 7.1) -- a flat x10
-// (the old API-Football-style treatment) compresses almost the entire
-// roster into the app's lowest card tier ("sand", rating < 75), since
-// real match-rating averages just don't spread anywhere near as wide as
-// a 0-10 scale implies. RATING_LOW/HIGH are a reasoned domain estimate
-// of the realistic range (replacement-level fringe player to a
-// genuinely excellent season), not fitted to that one sample, so this
-// should hold up as more players/seasons sync in. Not empirically
-// tuned against actual tier distribution yet -- revisit if most players
-// still end up bunched in one tier once there's a full dataset.
+// Pulls the season-aggregate `rating` detail (type_id 118) and the
+// season's appearance count (type_id 321) out of a player's `statistics`
+// array for the given season_id, if present.
+function extractRatingAndAppearances(
+  statistics: any[],
+  seasonId: number
+): { rawRating: number | null; appearances: number; details: any[] } {
+  const row = (statistics ?? []).find((s: any) => s.season_id === seasonId);
+  if (!row) return { rawRating: null, appearances: 0, details: [] };
+  const details = row.details ?? [];
+  const ratingValue = statRaw(details, STAT.RATING);
+  const rawRating = num(ratingValue?.average) ?? num(ratingValue?.total);
+  const appearances = statTotal(details, STAT.APPEARANCES);
+  return { rawRating, appearances, details };
+}
+
+// Position-weighted per-90 production score, on roughly the same 0-10
+// scale as Sportmonks' own match rating. NOT a from-scratch stat
+// recipe fitted to look right -- goals/assists/key passes weighted
+// heavily for attacking roles, tackles/interceptions/clearances/aerials
+// for defensive roles, with a small pass-accuracy nudge for everyone.
+function productionScore(role: Role, details: any[], minutes: number): number {
+  const p90 = (typeId: number) => perNinety(statTotal(details, typeId), minutes);
+  const goals = p90(STAT.GOALS);
+  const assists = p90(STAT.ASSISTS);
+  const keyPasses = p90(STAT.KEY_PASSES);
+  const dribbles = p90(STAT.DRIBBLES_OK);
+  const tackles = p90(STAT.TACKLES);
+  const interceptions = p90(STAT.INTERCEPTIONS);
+  const clearances = p90(STAT.CLEARANCES);
+  const aerials = p90(STAT.AERIALS_WON);
+  const passAcc = statPercent(details, STAT.PASS_ACC) ?? statPercent(details, STAT.PASS_ACC_ALT) ?? 75;
+
+  if (role === "GK") {
+    const saves = p90(STAT.SAVES);
+    const cleanSheetsTotal = statTotal(details, STAT.CLEAN_SHEETS) || statTotal(details, STAT.GK_CLEAN_SHEETS);
+    const appearancesForCS = statTotal(details, STAT.APPEARANCES) || 1;
+    const cleanSheetRate = cleanSheetsTotal / appearancesForCS;
+    return clamp(5.5 + saves * 0.35 + cleanSheetRate * 3, 4, 9);
+  }
+
+  const attacking = goals * 2.2 + assists * 1.8 + keyPasses * 0.35 + dribbles * 0.12;
+  const defending = tackles * 0.22 + interceptions * 0.22 + clearances * 0.08 + aerials * 0.12;
+  const passingQuality = (passAcc - 75) * 0.02;
+
+  const weights: Record<string, { attacking: number; defending: number }> = {
+    DEF: { attacking: 0.35, defending: 1.0 },
+    MID: { attacking: 0.75, defending: 0.55 },
+    FWD: { attacking: 1.1, defending: 0.2 },
+  };
+  const w = weights[role] ?? weights.MID;
+  const raw = 5.8 + attacking * w.attacking + defending * w.defending + passingQuality;
+  return clamp(raw, 4, 9.5);
+}
+
+// Calibrated against real, named players via a throwaway debug function
+// before going live (2026-11-11): with this mapping, Haaland (genuinely
+// world-class) lands at 91, Rice/Fernandes (very good, big-club regulars)
+// at 87-88, Van Dijk at 84, Groß (very good, NOT a big-club player) at
+// 83 -- clearly below Rice/Fernandes rather than level with them -- and
+// a 2-appearance fringe defender at 67 instead of maxing the scale.
 const RATING_LOW = 5.8;
-const RATING_HIGH = 7.6;
+const RATING_HIGH = 7.55;
 const OUT_LOW = 42;
-const OUT_HIGH = 96;
+const OUT_HIGH = 99;
 
 function scaleRating(raw: number): number {
   const t = (raw - RATING_LOW) / (RATING_HIGH - RATING_LOW);
   const scaled = OUT_LOW + t * (OUT_HIGH - OUT_LOW);
   return Math.max(40, Math.min(99, Math.round(scaled)));
+}
+
+function computeRating(
+  details: any[],
+  rawRating: number | null,
+  appearances: number,
+  minutes: number,
+  role: Role,
+  club: string,
+  leagueName: string
+): number {
+  const shrunkSM = rawRating !== null ? shrink(rawRating, BASELINE_RAW_RATING, appearances) : BASELINE_RAW_RATING;
+  const prodScore = productionScore(role, details, minutes);
+  const shrunkProd = shrink(prodScore, BASELINE_PRODUCTION, appearances);
+  const blended = 0.5 * shrunkSM + 0.5 * shrunkProd;
+  const eliteBonus = ELITE_CLUBS.has(club) ? ELITE_CLUB_BONUS : 0;
+  const strength = leagueStrength(leagueName);
+  const finalRaw = (blended + eliteBonus) * strength + (1 - strength) * BASELINE_RAW_RATING;
+  return scaleRating(finalRaw);
 }
 
 Deno.serve(async () => {
@@ -240,15 +359,18 @@ Deno.serve(async () => {
         const p = row.player;
         if (!p) continue;
 
-        const { rawRating, appearances } = extractRatingAndAppearances(p.statistics, team.seasonId);
-        const shrunkRating = rawRating !== null ? shrinkRating(rawRating, appearances) : null;
-        const rating100 = shrunkRating !== null ? scaleRating(shrunkRating) : null;
-        const seedPrice = rating100 !== null ? Math.max(10, Math.round(rating100 * 2)) : 10;
-
         const positionName =
           DETAILED_POSITION_NAMES[row.detailed_position_id] ??
           POSITION_NAMES[p.position_id ?? row.position_id] ??
           null;
+        const role = roleFor(positionName);
+
+        const { rawRating, appearances, details } = extractRatingAndAppearances(p.statistics, team.seasonId);
+        const minutes = statTotal(details, STAT.MINUTES);
+        const rating100 = details.length
+          ? computeRating(details, rawRating, appearances, minutes, role, team.name, team.leagueName)
+          : null;
+        const seedPrice = rating100 !== null ? Math.max(10, Math.round(rating100 * 2)) : 10;
 
         const { error } = await supabase.rpc("upsert_sportmonks_player", {
           p_api_player_id: p.id,
