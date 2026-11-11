@@ -21,6 +21,11 @@ declare
   repointed integer := 0;
   deleted_unmatched integer := 0;
 begin
+  -- holdings has its own lockdown trigger (enforce_holdings_update_lockdown)
+  -- that rejects any direct change to player_id/shares/avg_buy_price/
+  -- user_id unless this is set -- it's local to this transaction.
+  perform set_config('scouta.trusted_holdings_update', 'true', true);
+
   create temporary table repoint_pairs (old_id uuid, new_id uuid) on commit drop;
 
   insert into repoint_pairs (old_id, new_id)
