@@ -1948,16 +1948,16 @@ function AppInner() {
             {opts.showTopRow ? (
               <View style={styles.cardTopRowV2}>
                 <Image source={{ uri: CHIP_URI }} style={styles.chipIcon} />
-                {item.rating ? (
-                  <View style={styles.ratingBadge}>
-                    <Text style={[styles.ratingNumber, { color: tier.accent }]}>{item.rating}</Text>
-                    <Text style={[styles.ratingLabel, { color: tier.dim }]}>RATING</Text>
-                  </View>
-                ) : null}
+                <View style={styles.ratingBadge}>
+                  <Text style={[styles.ratingNumber, { color: item.rating ? tier.accent : tier.dim }]}>
+                    {item.rating || '—'}
+                  </Text>
+                  <Text style={[styles.ratingLabel, { color: tier.dim }]}>RATING</Text>
+                </View>
               </View>
             ) : null}
 
-            <View style={styles.cardBottomRowV2}>
+            <View style={[styles.cardBottomRowV2, opts.showTopRow && styles.cardBottomRowV2WithTopRow]}>
               <View style={styles.cardLeftColV2}>
                 {opts.detail ? (
                   <Text style={[styles.playerDetailV2, { color: tier.dim }]}>{opts.detail}</Text>
@@ -3338,7 +3338,12 @@ const styles = StyleSheet.create({
   },
   playerName: { fontSize: 18, fontWeight: '700', letterSpacing: -0.3 },
   cardTopRowV2: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  cardBottomRowV2: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 34 },
+  // marginTop is deliberately small by default (natural spacing with no
+  // top row above it, e.g. Portfolio holdings) -- cardBottomRowV2WithTopRow
+  // adds the extra room the chip + rating badge row actually needs, so a
+  // missing/unrated badge no longer leaves a big dead gap above the name.
+  cardBottomRowV2: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 10 },
+  cardBottomRowV2WithTopRow: { marginTop: 20 },
   cardLeftColV2: { flex: 1, paddingRight: 12 },
   cardRightColV2: { alignItems: 'flex-end' },
   playerDetailV2: { fontSize: 8.5, marginBottom: 6, letterSpacing: 2, textTransform: 'uppercase', fontWeight: '500' },
