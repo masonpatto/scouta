@@ -26,6 +26,16 @@
 //   ratings cluster far too tightly to differentiate the app's 40-99
 //   tier system, so scaleRating() below rescales a reasoned realistic
 //   range onto 40-99 instead of a flat x10. See its own comment.
+// - Real users reported specific, verifiable cases of the opposite
+//   problem: fringe players with only 1-2 appearances this season
+//   landing at the TOP of the scale (94-99), above established regular
+//   starters. Confirmed live (2026-11-11) against the real Sportmonks
+//   API: this is because `rating` (type_id 118) is an unweighted
+//   average with no reliability adjustment, so a 2-game fluke counts
+//   the same as a 20-game season. shrinkRating() below pulls a raw
+//   rating toward a league-average baseline proportional to how few
+//   appearances (type_id 321, confirmed via the real /core/types
+//   catalog) back it up, before scaleRating() runs.
 // - position_id / detailed_position_id are decoded via a small hardcoded
 //   table (only 16 values total, documented at
 //   https://docs.sportmonks.com/v3/definitions/types/position-types),
@@ -67,6 +77,10 @@ const DETAILED_POSITION_NAMES: Record<number, string> = {
 };
 
 const STAT_TYPE_RATING = 118;
+// Confirmed live against the real Sportmonks /core/types catalog
+// (2026-11-11), not guessed: id 119 is "Minutes Played", id 321 is
+// "Appearances".
+const STAT_TYPE_APPEARANCES = 321;
 
 function num(v: unknown): number | null {
   if (v === null || v === undefined) return null;
@@ -94,18 +108,38 @@ async function setState(supabase: ReturnType<typeof createClient>, key: string, 
   await supabase.from("sync_state").upsert({ key, value, updated_at: new Date().toISOString() });
 }
 
-// Pulls the season-aggregate `rating` detail (type_id 118) out of a
-// player's `statistics` array for the given season_id, if present.
-// Shape is UNVERIFIED for this specific type_id -- tries both
-// `value.average` and `value.total` since the docs only confirm the
-// general { total, ... } shape for counting stats, not this one.
-function extractRating(statistics: any[], seasonId: number): number | null {
+// Pulls the season-aggregate `rating` detail (type_id 118) and the
+// season's appearance count (type_id 321) out of a player's `statistics`
+// array for the given season_id, if present.
+function extractRatingAndAppearances(
+  statistics: any[],
+  seasonId: number
+): { rawRating: number | null; appearances: number } {
   const row = (statistics ?? []).find((s: any) => s.season_id === seasonId);
-  if (!row) return null;
-  const detail = (row.details ?? []).find((d: any) => d.type_id === STAT_TYPE_RATING);
-  if (!detail) return null;
-  const raw = num(detail.value?.average) ?? num(detail.value?.total);
-  return raw;
+  if (!row) return { rawRating: null, appearances: 0 };
+  const ratingDetail = (row.details ?? []).find((d: any) => d.type_id === STAT_TYPE_RATING);
+  const rawRating = ratingDetail ? num(ratingDetail.value?.average) ?? num(ratingDetail.value?.total) : null;
+  const appsDetail = (row.details ?? []).find((d: any) => d.type_id === STAT_TYPE_APPEARANCES);
+  const appearances = num(appsDetail?.value?.total) ?? 0;
+  return { rawRating, appearances };
+}
+
+// A player's `rating` from Sportmonks is a plain, unweighted average
+// across however many matches they've played this season -- no
+// adjustment for sample size. Confirmed live (2026-11-11): a fringe
+// player with just 2 appearances (180 minutes) averaged 7.52, landing
+// at the very top of the scale right alongside players with a full
+// season's worth of appearances behind their average. Standard
+// sports-analytics fix: shrink the raw rating toward a league-average
+// baseline, proportional to how few appearances back it up, using a
+// player with SHRINKAGE_GAMES "virtual" average appearances as the
+// prior. A 2-appearance fluke gets pulled hard toward the baseline; an
+// established 20+-appearance season barely moves.
+const BASELINE_RAW_RATING = 6.6; // ~ median raw rating across the first real sync (p50 6.7-6.8)
+const SHRINKAGE_GAMES = 10;
+
+function shrinkRating(rawRating: number, appearances: number): number {
+  return (rawRating * appearances + BASELINE_RAW_RATING * SHRINKAGE_GAMES) / (appearances + SHRINKAGE_GAMES);
 }
 
 // Confirmed against a real run (2026-11-10, 330 players across the 5
@@ -206,8 +240,9 @@ Deno.serve(async () => {
         const p = row.player;
         if (!p) continue;
 
-        const rawRating = extractRating(p.statistics, team.seasonId);
-        const rating100 = rawRating !== null ? scaleRating(rawRating) : null;
+        const { rawRating, appearances } = extractRatingAndAppearances(p.statistics, team.seasonId);
+        const shrunkRating = rawRating !== null ? shrinkRating(rawRating, appearances) : null;
+        const rating100 = shrunkRating !== null ? scaleRating(shrunkRating) : null;
         const seedPrice = rating100 !== null ? Math.max(10, Math.round(rating100 * 2)) : 10;
 
         const positionName =
