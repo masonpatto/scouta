@@ -74,10 +74,11 @@ begin
     update public.notifications set player_id = pair.new_id where player_id = pair.old_id;
     update public.activity_log set player_id = pair.new_id where player_id = pair.old_id;
 
-    -- The legacy row's own price history is exactly the "past" being
-    -- discarded here -- the Sportmonks row's price going forward is what
-    -- matters now.
+    -- The legacy row's own price/form history is exactly the "past"
+    -- being discarded here -- the Sportmonks row's own trajectory going
+    -- forward is what matters now, not a spliced-together series.
     delete from public.price_history where player_id = pair.old_id;
+    delete from public.player_form_scores where player_id = pair.old_id;
 
     delete from public.players where id = pair.old_id;
 
@@ -97,6 +98,7 @@ begin
   update public.notifications set player_id = null where player_id in (select id from leftover_old_ids);
   delete from public.activity_log where player_id in (select id from leftover_old_ids);
   delete from public.price_history where player_id in (select id from leftover_old_ids);
+  delete from public.player_form_scores where player_id in (select id from leftover_old_ids);
 
   select count(*) into deleted_unmatched from leftover_old_ids;
   delete from public.players where id in (select id from leftover_old_ids);
