@@ -7,7 +7,7 @@ import {
 import * as Font from 'expo-font';
 import * as SecureStore from 'expo-secure-store';
 import { Feather } from '@expo/vector-icons';
-import Svg, { Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, LinearGradient, RadialGradient, Stop } from 'react-native-svg';
 
 // ---------- Talking to Supabase Auth directly via fetch, no SDK needed ----------
 const SUPABASE_URL = 'https://eqflsykuoyuzbcixayjl.supabase.co';
@@ -60,10 +60,6 @@ const TIER_BADGE_BG_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAANwAAAA
 
 // Real Apple logo glyph, replacing the emoji fallback.
 const APPLE_LOGO_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAABf0lEQVR4nJWUsS5EURCG/7l3SayCkC1sLxKlTkOlo6LRKXkCrVKjUCj0HsBDiIQIlUJBFLIKiShkg929n2Ln7A6WtZOcnLlnZv4z/8ydIw0gwAxQcd0GCTQgA4aAfeANWHRb/h+ADMiBkn/v0JZHYMztv2eUMvh2VnGQZ2A+nH/JyCKImeH6tKQJSTeS6pI2JZ1LakgqS7oys9eeVHyfAo6B90DlENgF7ujKPbDh9LPvBS0Dl8G54KcUQMP1a2C0U69Q0C13eA8gKbDhesv3B6Aa2WSScIYrkgpJeaidSSr5MrebpAMzqwElMysSUOFBk/79lyT7mbefaEi31/uAKAQOe1yn61m45dYd0e+SbMtOqesbir3uBW726FbsWov2qCx5XJ6AzPdx4MkdW33ACuADWMV/n8zMAHIze5G051RbgUrTVzxD0oukU58GOlnRnfKTf1AEWPtCLdQqjUkVuHDnGnBE+wk5cTp1YLsnSABL9RoBFvBHLNjngNl4cZJPSyknDpqLriEAAAAASUVORK5CYII=';
-
-// Premium gold coin with radial gradient and depth shadow, for the
-// capital reveal's coin-drop animation.
-const COIN_URI = 'data:image/png;base64,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';
 
 // Real gold chip graphic with the classic card-chip segment pattern.
 const CHIP_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABoAAAATCAYAAACORR0GAAAC0UlEQVR4nH1UO47UQBB91W5/BlgOsghBxg0gIUACib0CIiIFaUfAaskgIENcAEHEFSAhRuICkCNg1uNf1SPott3jWRipZXvq996rqhZy7USe2o/Pp/eLwj0aer3a67CiUQBiGAa0bYdVVUJVQRpIgiQAoGkaCADvM6gpQFKAbebwteu6V9fvvXlHrp0AwPdPJ08vH1THbdujaXuYWUwUCnVth7IqYKpTEdKSQgLvM5gpjARI5F6QZ4Kff5pnN47eruX755O7ly9VH35vGlNVgHRpoqHv0XYdqrKYAJAGWgDSNC1EIiO1ibGZmgC4UHn356y76wE+brueOihE6AycnDGhn1ksGZEEgQjCUptTNev6gUZ74kEctm0vAIVkQDo6E+cUmA8iKIH8y+7abgCoh97Mqp1kqTxkQGoM+quBCN9zoXCcYCd27FVgisrX2+3EgEYQabEwDGdnNaqqHKdqAgQBtnWDosyRZ9luDxdy+1VVnsskPIG+F6iWODi4CNUBo7ykwYlAB0WRexRFjjhMgZHt5vLLSVo0NAak0s2FKJLIa+eDjb7+v80moi2xg0D8D5BocwslRnkT6faHYHdP5iDbAzSNd2z+nCsZpujrMe4LFokDnan58y/4ISmU+oVY28vhz+pk6paUQQyDoq63MNW9qRIATdOC5qGpfakOCV8WRdyNtNCMKHMOghWKIoeZ7vgAgMsEAiDL3Gy3tGdhYBxhrUyqjJIk8sRvQZBKJvkw+czyYTc++tHYOiq/5ZmjqdqI1sh5rONOWGRhe2swvicXanyqmflMSNo3R/BFnotAADU1oyU929d6uWv7q2GAhSICIs8gCp66K7dfvv/5q35+scpdmXuH6X5Kk9ru+9hHm31sPPEaK7xzqzJzvzfd81sPPn5w5Npdu/P6eLNpjmj6RYCaJP/JKAIY98ZSpqEoBazN7Mtm2x/dfPjxmOu1+wtBhJ0BjyU3wwAAAABJRU5ErkJggg==';
@@ -569,6 +565,25 @@ function WebBootOverlay({ onDone }) {
   );
 }
 
+// ---------- Capital-reveal coin: a real SVG circle with a radial-gradient
+// face, replacing a blurry raster PNG that looked soft/low-res at the small
+// sizes it's actually rendered at. ----------
+function CoinIcon({ size = 22 }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 22 22">
+      <Defs>
+        <RadialGradient id="coinFaceGradient" cx="38%" cy="32%" r="75%">
+          <Stop offset="0%" stopColor="#fce7ab" />
+          <Stop offset="55%" stopColor="#e8bb55" />
+          <Stop offset="100%" stopColor="#b9872c" />
+        </RadialGradient>
+      </Defs>
+      <Circle cx="11" cy="11" r="10" fill="url(#coinFaceGradient)" stroke="#9c6f20" strokeWidth="0.75" />
+      <Circle cx="11" cy="11" r="7.5" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="0.75" />
+    </Svg>
+  );
+}
+
 // ---------- Scout Potential ring: a real SVG progress ring (native,
 // crisp at any size) whose arc actually reflects `score` out of 100,
 // replacing a fixed decorative PNG that looked the same regardless of
@@ -905,7 +920,9 @@ function AppInner() {
             n = target;
             clearInterval(countTimer);
             setCapitalShine(true);
-            Animated.timing(shineAnim, { toValue: 1, duration: 700, useNativeDriver: true }).start();
+            Animated.timing(shineAnim, { toValue: 1, duration: 700, useNativeDriver: true }).start(() => {
+              setCapitalShine(false);
+            });
           }
           setDisplayedCapital(Math.round(n));
         }, 900 / steps);
@@ -1878,7 +1895,7 @@ function AppInner() {
                 <>
                   <View style={styles.coinRow}>
                     {Array.from({ length: coinsDropped }).map((_, i) => (
-                      <Image key={i} source={{ uri: COIN_URI }} style={styles.coinImg} />
+                      <CoinIcon key={i} size={22} />
                     ))}
                   </View>
                   {displayedCapital > 0 ? (
@@ -3251,7 +3268,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 6,
     maxWidth: 220, minHeight: 26,
   },
-  coinImg: { width: 22, height: 22 },
   capitalAmountWrap: { position: 'relative', overflow: 'hidden', marginVertical: 8 },
   capitalAmount: { fontSize: 44, fontWeight: '800', color: '#161410', textAlign: 'center' },
   capitalAmountSuffix: { fontSize: 22, fontWeight: '700', color: '#8a8578' },
