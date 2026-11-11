@@ -457,11 +457,8 @@ function AnimatedShine() {
 }
 
 // ---------- Web-only presentation: a centred "app card" on wide browser
-// windows (instead of the phone layout stretching edge-to-edge), plus a
-// one-shot boot animation that covers the whole viewport on first paint.
-// Both are no-ops on native -- WebFrame renders children untouched, and
-// WebBootOverlay never mounts (App() only sets booting=true when
-// Platform.OS === 'web'), so neither can regress the native app.
+// windows, instead of the phone layout stretching edge-to-edge. A no-op
+// on native -- WebFrame renders children untouched there.
 const WEB_NARROW_BREAKPOINT = 680; // phone-width browsers still get the full-bleed native-style layout
 
 function WebFrame({ children }) {
@@ -480,88 +477,6 @@ function WebFrame({ children }) {
         {children}
       </View>
     </View>
-  );
-}
-
-function WebBootOverlay({ onDone }) {
-  const bg = useRef(new Animated.Value(0)).current;
-  const logo = useRef(new Animated.Value(0)).current;
-  const rule = useRef(new Animated.Value(0)).current;
-  const shine = useRef(new Animated.Value(0)).current;
-  const tagline = useRef(new Animated.Value(0)).current;
-  const overlay = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    if (Platform.OS !== 'web') return;
-    const seq = Animated.sequence([
-      Animated.timing(bg, { toValue: 1, duration: 320, useNativeDriver: true }),
-      Animated.parallel([
-        Animated.spring(logo, { toValue: 1, friction: 7, tension: 60, useNativeDriver: true }),
-      ]),
-      Animated.parallel([
-        Animated.timing(rule, { toValue: 1, duration: 420, useNativeDriver: true }),
-        Animated.timing(shine, { toValue: 1, duration: 650, useNativeDriver: true }),
-        Animated.timing(tagline, { toValue: 1, duration: 420, useNativeDriver: true }),
-      ]),
-      Animated.delay(450),
-      Animated.timing(overlay, { toValue: 0, duration: 480, useNativeDriver: true }),
-    ]);
-    seq.start(() => onDone());
-    return () => seq.stop();
-  }, []);
-
-  if (Platform.OS !== 'web') return null;
-
-  return (
-    <Animated.View style={[styles.webBootOverlay, { opacity: overlay }]} pointerEvents="none">
-      <Animated.View style={[styles.webBootBg, { opacity: bg }]}>
-        <Image source={{ uri: BLOB1_URI }} style={styles.blob1} />
-        <Image source={{ uri: BLOB2_URI }} style={styles.blob2} />
-        <Image source={{ uri: BLOB3_URI }} style={styles.blob3} />
-        <Image source={{ uri: GUILLOCHE_URI }} style={[styles.guilloche, { opacity: 0.06 }]} resizeMode="repeat" />
-      </Animated.View>
-      <View style={styles.webBootCenter}>
-        <Animated.View
-          style={[
-            styles.webBootLogoWrap,
-            {
-              opacity: logo,
-              transform: [
-                { scale: logo.interpolate({ inputRange: [0, 1], outputRange: [0.88, 1] }) },
-              ],
-            },
-          ]}
-        >
-          <Image source={{ uri: LOGO_URI }} style={styles.webBootLogo} resizeMode="contain" />
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              styles.webBootShine,
-              {
-                transform: [
-                  { translateX: shine.interpolate({ inputRange: [0, 1], outputRange: [-80, 260] }) },
-                  { rotate: '20deg' },
-                ],
-              },
-            ]}
-          />
-        </Animated.View>
-        <Animated.View style={[styles.webBootRule, { transform: [{ scaleX: rule }] }]} />
-        <Animated.Text
-          style={[
-            styles.webBootTagline,
-            {
-              opacity: tagline,
-              transform: [
-                { translateY: tagline.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) },
-              ],
-            },
-          ]}
-        >
-          Scout. Trade. Rise.
-        </Animated.Text>
-      </View>
-    </Animated.View>
   );
 }
 
@@ -2924,13 +2839,11 @@ function AppInner() {
 }
 
 export default function App() {
-  const [booting, setBooting] = useState(Platform.OS === 'web');
   return (
     <View style={styles.webRoot}>
       <WebFrame>
         <AppInner />
       </WebFrame>
-      {booting && <WebBootOverlay onDone={() => setBooting(false)} />}
     </View>
   );
 }
@@ -2950,22 +2863,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#faf9f6', borderRadius: 32, overflow: 'hidden',
     borderWidth: 1, borderColor: 'rgba(20,18,14,0.06)',
     shadowColor: '#161410', shadowOffset: { width: 0, height: 30 }, shadowOpacity: 0.22, shadowRadius: 60, elevation: 20,
-  },
-  webBootOverlay: {
-    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 50,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  webBootBg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: '#faf9f6' },
-  webBootCenter: { alignItems: 'center', justifyContent: 'center' },
-  webBootLogoWrap: { overflow: 'hidden', paddingVertical: 4, marginBottom: 18 },
-  webBootLogo: { width: 220, height: 46 },
-  webBootShine: {
-    position: 'absolute', top: -30, left: 0, width: 50, height: 160,
-    backgroundColor: 'rgba(255,255,255,0.55)',
-  },
-  webBootRule: { width: 64, height: 2, backgroundColor: '#9c7a3f', marginBottom: 16 },
-  webBootTagline: {
-    fontSize: 13, letterSpacing: 1.5, textTransform: 'uppercase', fontWeight: '600', color: '#918c81',
   },
   screen: { flex: 1, backgroundColor: '#faf9f6', padding: 24, justifyContent: 'center' },
   appShell: { flex: 1, backgroundColor: '#faf9f6' },
