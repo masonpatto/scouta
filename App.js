@@ -2104,6 +2104,16 @@ function AppInner() {
                     showTopRow: true,
                     detail: `${item.position} · ${item.club} · ${item.age}`,
                     cardStyle: styles.homeHeroCardWrap,
+                    rightButton: (
+                      <>
+                        <TouchableOpacity onPress={() => toggleWatchlist(item)} style={{ marginRight: 10 }}>
+                          <Text style={styles.watchIcon}>{isWatchlisted(item.id) ? '★' : '☆'}</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.smallButton} onPress={() => handleBuy(item)} disabled={actionBusy}>
+                          <Text style={styles.smallButtonText}>Buy</Text>
+                        </TouchableOpacity>
+                      </>
+                    ),
                   }))}
                 </ScrollView>
               );
@@ -2130,6 +2140,16 @@ function AppInner() {
                       showTopRow: true,
                       detail: `${item.position} · ${item.club} · ${item.age}`,
                       cardStyle: styles.homeHeroCardWrap,
+                      rightButton: (
+                        <>
+                          <TouchableOpacity onPress={() => toggleWatchlist(item)} style={{ marginRight: 10 }}>
+                            <Text style={styles.watchIcon}>{isWatchlisted(item.id) ? '★' : '☆'}</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity style={styles.smallButton} onPress={() => handleBuy(item)} disabled={actionBusy}>
+                            <Text style={styles.smallButtonText}>Buy</Text>
+                          </TouchableOpacity>
+                        </>
+                      ),
                     }))}
                   </ScrollView>
                 </>
