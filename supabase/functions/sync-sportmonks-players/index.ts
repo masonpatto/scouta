@@ -175,23 +175,17 @@ const MIN_GAMES_FOR_ELITE_BONUS = 5;
 // player with just 2 appearances (180 minutes) averaged 7.52, landing
 // at the very top of the scale right alongside players with a full
 // season's worth of appearances behind their average. Standard
-// sports-analytics fix: shrink a raw value toward a baseline,
+// sports-analytics fix: shrink the raw rating toward a baseline,
 // proportional to how little playing time backs it up, using a player
-// with SHRINKAGE_GAMES "virtual" average games as the prior. The SAME
-// function is used for both the Sportmonks rating and the production
-// score below -- the second real bug here was shrinking only the
-// former and not the latter.
+// with SHRINKAGE_GAMES "virtual" average games as the prior.
 //
-// THIRD bug, also confirmed live: the reliability measure itself was
-// wrong. Using raw APPEARANCE COUNT let a super-sub through -- a
-// player with 12 appearances but only 475 minutes (~5.3 full matches,
-// ~40 min/appearance) looked just as "reliable" as a 12-game starter,
-// so his per-90 goal/assist rate (inflated by never playing a full 90)
-// barely got shrunk and he hit 90. Reliability has to scale with
-// MINUTES, not appearance count, so every shrink() call below uses
-// games-equivalent (minutes / 90) instead of raw appearances -- for a
-// genuine starter the two numbers are nearly identical anyway, so this
-// only changes anything for exactly the super-sub case it's meant to.
+// Reliability is measured by MINUTES (games-equivalent = minutes / 90),
+// not raw appearance count -- confirmed live that raw appearance count
+// let a super-sub through: a player with 12 appearances but only 475
+// minutes (~5.3 full matches, ~40 min/appearance) looked just as
+// "reliable" as a 12-game starter. For a genuine starter the two
+// numbers are nearly identical anyway, so this only changes anything
+// for exactly the super-sub case it's meant to.
 const BASELINE_RAW_RATING = 6.6; // ~ median raw Sportmonks rating across the first real sync
 const SHRINKAGE_GAMES = 10;
 function shrink(value: number, baseline: number, gamesEquivalent: number): number {
