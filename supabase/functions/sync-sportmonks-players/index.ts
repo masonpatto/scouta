@@ -51,15 +51,23 @@
 //    real clearances blown up by the per-90 math), and it wasn't
 //    shrunk the same way the rating was -- it blew straight through the
 //    scale ceiling for exactly the player it was meant to fix.
-// 3. Final design: blend a shrunk Sportmonks rating with a SEPARATELY
-//    shrunk, position-weighted production score (both get the identical
-//    reliability treatment now), then add a small club-prestige bonus
-//    for a short list of genuinely elite clubs -- the one signal no
-//    per-match stat captures -- and a league-strength multiplier.
+// 3. Blend a shrunk Sportmonks rating with a SEPARATELY shrunk,
+//    position-weighted production score (both get identical reliability
+//    treatment), add a small club-prestige bonus for a short list of
+//    genuinely elite clubs, and a league-strength multiplier.
+// 4. THIRD failure, also user-caught: the reliability measure itself
+//    was wrong. Shrinking by raw APPEARANCE COUNT let a super-sub
+//    through -- a player with 12 appearances but only 475 minutes
+//    (~5.3 full matches, ~40 min/appearance) looked just as reliable as
+//    a 12-game starter, so his per-90 rate (inflated by never playing a
+//    full 90) barely got shrunk and he hit 90. Every shrink() call, and
+//    the elite-club-bonus threshold, now uses games-equivalent
+//    (minutes / 90) instead -- for a genuine starter the two numbers
+//    are nearly identical, so this only changes the super-sub case.
 //    Validated against real, named players (Rice, Fernandes, Haaland,
-//    Van Dijk, Groß, an obscure 2-game fringe defender) via a throwaway
-//    debug Edge Function before this went live; see scaleRating()'s own
-//    comment for the resulting numbers.
+//    Van Dijk, Groß, an obscure 2-game fringe defender, a real
+//    super-sub) via a throwaway debug Edge Function before this went
+//    live; see scaleRating()'s own comment for the resulting numbers.
 //
 // Deploy: paste this file's contents into a new Edge Function named
 // "sync-sportmonks-players" in the Supabase dashboard. Requires one
@@ -173,6 +181,12 @@ const ELITE_CLUBS = new Set([
   "Juventus", "Inter", "AC Milan", "Napoli",
 ]);
 const ELITE_CLUB_BONUS = 0.3;
+// A fringe squad player who's barely featured this season shouldn't
+// inherit a big club's reputation bonus just for being on the books --
+// gated on games-equivalent (minutes / 90), same reasoning as the
+// shrinkage fix below: raw appearance count alone would let a
+// super-sub qualify despite barely playing.
+const MIN_GAMES_FOR_ELITE_BONUS = 5;
 
 // A player's `rating` from Sportmonks is a plain, unweighted average
 // across however many matches they've played this season -- no
@@ -181,32 +195,43 @@ const ELITE_CLUB_BONUS = 0.3;
 // at the very top of the scale right alongside players with a full
 // season's worth of appearances behind their average. Standard
 // sports-analytics fix: shrink a raw value toward a baseline,
-// proportional to how few appearances back it up, using a player with
-// SHRINKAGE_GAMES "virtual" average appearances as the prior. The SAME
+// proportional to how little playing time backs it up, using a player
+// with SHRINKAGE_GAMES "virtual" average games as the prior. The SAME
 // function is used for both the Sportmonks rating and the production
 // score below -- the second real bug here was shrinking only the
 // former and not the latter.
+//
+// THIRD bug, also confirmed live: the reliability measure itself was
+// wrong. Using raw APPEARANCE COUNT let a super-sub through -- a
+// player with 12 appearances but only 475 minutes (~5.3 full matches,
+// ~40 min/appearance) looked just as "reliable" as a 12-game starter,
+// so his per-90 goal/assist rate (inflated by never playing a full 90)
+// barely got shrunk and he hit 90. Reliability has to scale with
+// MINUTES, not appearance count, so every shrink() call below uses
+// games-equivalent (minutes / 90) instead of raw appearances -- for a
+// genuine starter the two numbers are nearly identical anyway, so this
+// only changes anything for exactly the super-sub case it's meant to.
 const BASELINE_RAW_RATING = 6.6; // ~ median raw Sportmonks rating across the first real sync
 const BASELINE_PRODUCTION = 5.8; // matches productionScore()'s own intercept -- "zero contribution" level
 const SHRINKAGE_GAMES = 10;
-function shrink(value: number, baseline: number, appearances: number): number {
-  return (value * appearances + baseline * SHRINKAGE_GAMES) / (appearances + SHRINKAGE_GAMES);
+function shrink(value: number, baseline: number, gamesEquivalent: number): number {
+  return (value * gamesEquivalent + baseline * SHRINKAGE_GAMES) / (gamesEquivalent + SHRINKAGE_GAMES);
 }
 
-// Pulls the season-aggregate `rating` detail (type_id 118) and the
-// season's appearance count (type_id 321) out of a player's `statistics`
-// array for the given season_id, if present.
-function extractRatingAndAppearances(
+// Pulls the season-aggregate `rating` detail (type_id 118) out of a
+// player's `statistics` array for the given season_id, if present.
+// Reliability is handled by minutes played (see shrink()'s comment),
+// not appearance count, so that's not extracted here.
+function extractRatingAndDetails(
   statistics: any[],
   seasonId: number
-): { rawRating: number | null; appearances: number; details: any[] } {
+): { rawRating: number | null; details: any[] } {
   const row = (statistics ?? []).find((s: any) => s.season_id === seasonId);
-  if (!row) return { rawRating: null, appearances: 0, details: [] };
+  if (!row) return { rawRating: null, details: [] };
   const details = row.details ?? [];
   const ratingValue = statRaw(details, STAT.RATING);
   const rawRating = num(ratingValue?.average) ?? num(ratingValue?.total);
-  const appearances = statTotal(details, STAT.APPEARANCES);
-  return { rawRating, appearances, details };
+  return { rawRating, details };
 }
 
 // Position-weighted per-90 production score, on roughly the same 0-10
@@ -249,11 +274,13 @@ function productionScore(role: Role, details: any[], minutes: number): number {
 }
 
 // Calibrated against real, named players via a throwaway debug function
-// before going live (2026-11-11): with this mapping, Haaland (genuinely
-// world-class) lands at 91, Rice/Fernandes (very good, big-club regulars)
-// at 87-88, Van Dijk at 84, Groß (very good, NOT a big-club player) at
-// 83 -- clearly below Rice/Fernandes rather than level with them -- and
-// a 2-appearance fringe defender at 67 instead of maxing the scale.
+// before going live (2026-11-11): with this mapping (and the
+// games-equivalent reliability fix above), Haaland (genuinely
+// world-class) lands at 90, Rice/Fernandes (very good, big-club
+// regulars) at 87, Van Dijk at 84, Groß (very good, NOT a big-club
+// player) at 83 -- clearly below Rice/Fernandes rather than level with
+// them -- a 2-appearance fringe defender at 67, and a real super-sub
+// (12 appearances, 475 minutes) at 77 instead of 90.
 const RATING_LOW = 5.8;
 const RATING_HIGH = 7.55;
 const OUT_LOW = 42;
@@ -268,17 +295,18 @@ function scaleRating(raw: number): number {
 function computeRating(
   details: any[],
   rawRating: number | null,
-  appearances: number,
   minutes: number,
   role: Role,
   club: string,
   leagueName: string
 ): number {
-  const shrunkSM = rawRating !== null ? shrink(rawRating, BASELINE_RAW_RATING, appearances) : BASELINE_RAW_RATING;
+  const gamesEquivalent = minutes / 90;
+  const shrunkSM = rawRating !== null ? shrink(rawRating, BASELINE_RAW_RATING, gamesEquivalent) : BASELINE_RAW_RATING;
   const prodScore = productionScore(role, details, minutes);
-  const shrunkProd = shrink(prodScore, BASELINE_PRODUCTION, appearances);
+  const shrunkProd = shrink(prodScore, BASELINE_PRODUCTION, gamesEquivalent);
   const blended = 0.5 * shrunkSM + 0.5 * shrunkProd;
-  const eliteBonus = ELITE_CLUBS.has(club) ? ELITE_CLUB_BONUS : 0;
+  const isElite = ELITE_CLUBS.has(club) && gamesEquivalent >= MIN_GAMES_FOR_ELITE_BONUS;
+  const eliteBonus = isElite ? ELITE_CLUB_BONUS : 0;
   const strength = leagueStrength(leagueName);
   const finalRaw = (blended + eliteBonus) * strength + (1 - strength) * BASELINE_RAW_RATING;
   return scaleRating(finalRaw);
@@ -365,10 +393,10 @@ Deno.serve(async () => {
           null;
         const role = roleFor(positionName);
 
-        const { rawRating, appearances, details } = extractRatingAndAppearances(p.statistics, team.seasonId);
+        const { rawRating, details } = extractRatingAndDetails(p.statistics, team.seasonId);
         const minutes = statTotal(details, STAT.MINUTES);
         const rating100 = details.length
-          ? computeRating(details, rawRating, appearances, minutes, role, team.name, team.leagueName)
+          ? computeRating(details, rawRating, minutes, role, team.name, team.leagueName)
           : null;
         const seedPrice = rating100 !== null ? Math.max(10, Math.round(rating100 * 2)) : 10;
 
