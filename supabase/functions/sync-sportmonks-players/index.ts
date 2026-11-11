@@ -316,12 +316,20 @@ Deno.serve(async () => {
           POSITION_NAMES[p.position_id ?? row.position_id] ??
           null;
 
+        // No statRow at all (confirmed live, 2026-11-11: e.g. a long-term
+        // injury with zero appearances this season) isn't a different case
+        // from a thin sample -- it's just the zero-games extreme of it, so
+        // it goes through the exact same shrink-toward-baseline formula
+        // instead of a separate hardcoded fallback number. rawRating/minutes
+        // naturally come out null/0 and shrink() pulls that all the way to
+        // BASELINE_RAW_RATING, scaled by the same league-strength logic as
+        // every other player.
         const statRow = (p.statistics ?? []).find((s: any) => s.season_id === team.seasonId);
         const details = statRow?.details ?? [];
         const rawRating = extractRating(p.statistics, team.seasonId);
         const minutes = statTotal(details, STAT.MINUTES);
-        const rating100 = statRow ? computeRating(rawRating, minutes, team.name, team.leagueName) : null;
-        const seedPrice = rating100 !== null ? Math.max(10, Math.round(rating100 * 2)) : 10;
+        const rating100 = computeRating(rawRating, minutes, team.name, team.leagueName);
+        const seedPrice = Math.max(10, Math.round(rating100 * 2));
 
         const { error } = await supabase.rpc("upsert_sportmonks_player", {
           p_api_player_id: p.id,
