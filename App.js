@@ -7,7 +7,7 @@ import {
 import * as Font from 'expo-font';
 import * as SecureStore from 'expo-secure-store';
 import { Feather } from '@expo/vector-icons';
-import Svg, { Circle, Defs, LinearGradient, RadialGradient, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, Line, LinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 // ---------- Talking to Supabase Auth directly via fetch, no SDK needed ----------
 const SUPABASE_URL = 'https://eqflsykuoyuzbcixayjl.supabase.co';
@@ -60,9 +60,6 @@ const TIER_BADGE_BG_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAANwAAAA
 
 // Real Apple logo glyph, replacing the emoji fallback.
 const APPLE_LOGO_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAABf0lEQVR4nJWUsS5EURCG/7l3SayCkC1sLxKlTkOlo6LRKXkCrVKjUCj0HsBDiIQIlUJBFLIKiShkg929n2Ln7A6WtZOcnLlnZv4z/8ydIw0gwAxQcd0GCTQgA4aAfeANWHRb/h+ADMiBkn/v0JZHYMztv2eUMvh2VnGQZ2A+nH/JyCKImeH6tKQJSTeS6pI2JZ1LakgqS7oys9eeVHyfAo6B90DlENgF7ujKPbDh9LPvBS0Dl8G54KcUQMP1a2C0U69Q0C13eA8gKbDhesv3B6Aa2WSScIYrkgpJeaidSSr5MrebpAMzqwElMysSUOFBk/79lyT7mbefaEi31/uAKAQOe1yn61m45dYd0e+SbMtOqesbir3uBW726FbsWov2qCx5XJ6AzPdx4MkdW33ACuADWMV/n8zMAHIze5G051RbgUrTVzxD0oukU58GOlnRnfKTf1AEWPtCLdQqjUkVuHDnGnBE+wk5cTp1YLsnSABL9RoBFvBHLNjngNl4cZJPSyknDpqLriEAAAAASUVORK5CYII=';
-
-// Real gold chip graphic with the classic card-chip segment pattern.
-const CHIP_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABoAAAATCAYAAACORR0GAAAC0UlEQVR4nH1UO47UQBB91W5/BlgOsghBxg0gIUACib0CIiIFaUfAaskgIENcAEHEFSAhRuICkCNg1uNf1SPott3jWRipZXvq996rqhZy7USe2o/Pp/eLwj0aer3a67CiUQBiGAa0bYdVVUJVQRpIgiQAoGkaCADvM6gpQFKAbebwteu6V9fvvXlHrp0AwPdPJ08vH1THbdujaXuYWUwUCnVth7IqYKpTEdKSQgLvM5gpjARI5F6QZ4Kff5pnN47eruX755O7ly9VH35vGlNVgHRpoqHv0XYdqrKYAJAGWgDSNC1EIiO1ibGZmgC4UHn356y76wE+brueOihE6AycnDGhn1ksGZEEgQjCUptTNev6gUZ74kEctm0vAIVkQDo6E+cUmA8iKIH8y+7abgCoh97Mqp1kqTxkQGoM+quBCN9zoXCcYCd27FVgisrX2+3EgEYQabEwDGdnNaqqHKdqAgQBtnWDosyRZ9luDxdy+1VVnsskPIG+F6iWODi4CNUBo7ykwYlAB0WRexRFjjhMgZHt5vLLSVo0NAak0s2FKJLIa+eDjb7+v80moi2xg0D8D5BocwslRnkT6faHYHdP5iDbAzSNd2z+nCsZpujrMe4LFokDnan58y/4ISmU+oVY28vhz+pk6paUQQyDoq63MNW9qRIATdOC5qGpfakOCV8WRdyNtNCMKHMOghWKIoeZ7vgAgMsEAiDL3Gy3tGdhYBxhrUyqjJIk8sRvQZBKJvkw+czyYTc++tHYOiq/5ZmjqdqI1sh5rONOWGRhe2swvicXanyqmflMSNo3R/BFnotAADU1oyU929d6uWv7q2GAhSICIs8gCp66K7dfvv/5q35+scpdmXuH6X5Kk9ru+9hHm31sPPEaK7xzqzJzvzfd81sPPn5w5Npdu/P6eLNpjmj6RYCaJP/JKAIY98ZSpqEoBazN7Mtm2x/dfPjxmOu1+wtBhJ0BjyU3wwAAAABJRU5ErkJggg==';
 
 // Dark-lined guilloche texture for the redesigned light/cream player
 // card -- the original guilloche is white lines, invisible on a light
@@ -503,6 +500,31 @@ function CoinIcon({ size = 22 }) {
   );
 }
 
+// ---------- Card-chip icon: a real SVG EMV-style chip with a gold
+// gradient and crisp contact-pad lines, replacing a blurry generated
+// raster PNG whose grid lines looked soft/pixelated at render size. ----------
+function ChipIcon({ width = 26, height = 19 }) {
+  return (
+    <Svg width={width} height={height} viewBox="0 0 26 19">
+      <Defs>
+        <LinearGradient id="chipFaceGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+          <Stop offset="0%" stopColor="#f6dfa0" />
+          <Stop offset="45%" stopColor="#d9b871" />
+          <Stop offset="100%" stopColor="#a9822f" />
+        </LinearGradient>
+      </Defs>
+      <Rect x="0.5" y="0.5" width="25" height="18" rx="4" fill="url(#chipFaceGradient)" stroke="#8a6d2f" strokeWidth="0.6" />
+      <Rect x="4" y="4" width="18" height="11" rx="2" fill="none" stroke="rgba(138,109,47,0.55)" strokeWidth="0.6" />
+      <Line x1="13" y1="4" x2="13" y2="15" stroke="rgba(138,109,47,0.55)" strokeWidth="0.6" />
+      <Line x1="4" y1="9.5" x2="22" y2="9.5" stroke="rgba(138,109,47,0.55)" strokeWidth="0.6" />
+      <Line x1="8" y1="0.5" x2="8" y2="4" stroke="rgba(138,109,47,0.55)" strokeWidth="0.6" />
+      <Line x1="18" y1="0.5" x2="18" y2="4" stroke="rgba(138,109,47,0.55)" strokeWidth="0.6" />
+      <Line x1="8" y1="15" x2="8" y2="18.5" stroke="rgba(138,109,47,0.55)" strokeWidth="0.6" />
+      <Line x1="18" y1="15" x2="18" y2="18.5" stroke="rgba(138,109,47,0.55)" strokeWidth="0.6" />
+    </Svg>
+  );
+}
+
 // ---------- Scout Potential ring: a real SVG progress ring (native,
 // crisp at any size) whose arc actually reflects `score` out of 100,
 // replacing a fixed decorative PNG that looked the same regardless of
@@ -937,7 +959,7 @@ function AppInner() {
         >
           <View style={styles.buyCard}>
             <View style={styles.buyCardHeader}>
-              <Image source={{ uri: CHIP_URI }} style={styles.chipIcon} />
+              <ChipIcon />
               <View style={styles.ratingBadge}>
                 <Text style={[styles.ratingNumber, { color: player.rating ? tier.accent : tier.dim }]}>
                   {player.rating || '—'}
@@ -2048,7 +2070,7 @@ function AppInner() {
           <View style={{ flex: 1, paddingBottom: 24 }}>
             {opts.showTopRow ? (
               <View style={styles.cardTopRowV2}>
-                <Image source={{ uri: CHIP_URI }} style={styles.chipIcon} />
+                <ChipIcon />
                 <View style={styles.ratingBadge}>
                   <Text style={[styles.ratingNumber, { color: item.rating ? tier.accent : tier.dim }]}>
                     {item.rating || '—'}
@@ -3657,7 +3679,6 @@ const styles = StyleSheet.create({
   natBadgeText: { fontSize: 10, fontWeight: '700', color: '#c7c2b6', letterSpacing: 0.5 },
   flagEmoji: { fontSize: 15, marginLeft: 8 },
   cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
-  chipIcon: { width: 26, height: 19, borderRadius: 5 },
   ratingBadge: { alignItems: 'flex-end' },
   ratingNumber: { fontSize: 20, fontWeight: '800', color: '#c9a227', lineHeight: 22 },
   ratingLabel: { fontSize: 9, fontWeight: '700', color: '#918c81', letterSpacing: 1 },
