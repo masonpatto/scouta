@@ -146,10 +146,6 @@ function tierFor(rating, age) {
   return TIERS.sand;
 }
 
-// Player silhouette placeholder, shown over the tier material until
-// real player photography exists. This is also the natural slot for
-// real photos later -- swap the source, keep the frame.
-const SILHOUETTE_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAFQAAABUCAYAAAAcaxDBAAAFEElEQVR4nO2bTYtcRRSGn9MTM+BoYpRkVIwk+IGg6CAMihHdZeM+EHFcmJUuRFFE0VWUqP9BXPsLXChuRMEPBHFhJAlGY2IkJhGdieCku18XVUVX3+n5yq2uvj1dD1xuT8/tc06991Td+rpQKBQKhUKhUCgUCoVCoVAoFAqTgY06gEFIMqCFi09A1/+r7zsz02giHBMkmaSpTVw/5cVvDI0JRtKUmXX85xuAA8BBYB8wi8vKC8AvwCfAl2a2VP1tASeIP++RdFTSGa3Pr/7a3bGNiUdSy58PSzoXCdaRdNUfbX+EvzvRdWclHY5tTSRxeynp3Uigq5K6G8jQrr82cMzbaly7moVIzGORkB1tnpDJfaKOtnSZicRc8EIsbzArV6PrbUjS07GP3GSvGnLtnIDdwEngRv933faviyvPP8C9wJ+AmVl3zV8lZhSNeMt3yF8CduCESBFHy9vaCbzsfWQvX9YMlWRmJrl+5ilgD2myMxCy9AJwt5ktBZ+J7K9L7jsY/B2g11lPGUNoTmaBxyo+s5Bb0FAjnvTnYbRvweYTFZ9ZGFVHeG8GH3dm8LGC3IKG7LnNn4eRPcHm7RWfWZjcodqQGNVD6ZI/D+PpG2xerPjMwqgy9FQGHycz+FhBbkFD9nw6RP/B5mcVn1kY1UPpW+AP3AMk5UMjdOzPex+xzyxkFdSPkqbM7ArwIcMT9AMzu+J9Zc3QUUyOBJ83Az8Bt5B2cuQicB/wF7ibWNPupsg/eeAnLczsEvACToQO9do6eRsGPG9ml+lNwkwG0ZzoO34eM8UE89HY9kQhvwTiz+9HAl3rEsh73u5kLoEE1FukW5B0fkDmtStHNZN/l/RMbGuiUf9i3a1yTcBGl5HfljTrf9uIat6YqqGVGx0eAZ4C7sH1CAAuAyeAj4Gvy0aHdVDZijMc1L9ZDPo3i0GDN4s1RtABInZWE8xfGzK5UeKOVNBIRAa1gZK2A9cB2/xXbeCqmS0PuDYIPFJxRyJoyDAza0ff3QQ8CMwBD+OWMPYC1wPT/rL/gH+B34AzwHfA98APZvZ3ZGsba2T4liJ+6EialnRI0kfq3yi2Wc55G4ckTQ/yteWIO92Sdkl6TdLxijBh9BM69B3/XXx01L8TrzqqOu5t7xrke0vgqyCSWpJelHQ6EiAIVHdvU7gBgdPeVyuOYexRbxQ0J+nzqMDXOhmyHvFkibzPuTiWsSUS81lJi0MWci1hFyUtxDGNHepV89ejQrYzCFkl9vlGHNvYoJ6Yb0aFypGVqxHaaUl6K46x8agn5hFfgLoPnFTE86dH4lhTkrRjLz/rI+lR4AtvPxxNQNHxuJl9pcQzVckKKjf6MdyO5G9wu4g79MbcTSHEdAKYB5YApRpVJd2b6bdfv4oTs03zxAQXUxsX4ys+5mQ6JMlQSS0z60q6A/gRmKFZVb1KqPaLwANmdjaUoa7hVHcm2HkOV+XDGnlTCRssduJihkRa1C60ejPm07js3Ef6rd7DINz0n4H7gWWovzEiydsXPoh5YH9Cu8MmxHgXMJ/qrZEUBQ8ZetCfx2mxLMQaYq9dY1MIGqrIQ/7c5LazSoh1zp9rd51qCSr3DlBHbsIhVPdxFHR/NCipFX+qtm477q24cWUHrgy1SSnojP88jhk6Q8MEjZd1x5EpEiXCOHRvxooiaGKKoIkpgiamCJqYImhiiqCJKYImpgiamCJoYoqgiSmCJqYImpgiaGL+B6Or7wr+RWmFAAAAAElFTkSuQmCC';
 
 // Real flags, rendered natively by the OS. A two-letter country code
 // maps directly onto regional indicator symbols, so every ISO country
@@ -2848,7 +2844,7 @@ function AppInner() {
                           resizeMode="stretch"
                         />
                         <View style={[styles.homeWatchAvatarEdge, { backgroundColor: wTier.border }]} />
-                        <Image source={{ uri: SILHOUETTE_URI }} style={styles.homeWatchSilhouette} />
+                        <Text style={[styles.homeWatchInitials, { color: wTier.text }]}>{initialsFor(p.name)}</Text>
                       </View>
                       <Text style={styles.homeWatchText}>
                         <Text style={{ fontWeight: '700', color: '#161410' }}>{p.name}</Text> {verbs[i % verbs.length]}
@@ -3767,7 +3763,7 @@ const styles = StyleSheet.create({
   },
   homeWatchAvatar: {
     width: 50, height: 50, borderRadius: 17, backgroundColor: '#211f24',
-    alignItems: 'center', justifyContent: 'flex-end', overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
     shadowColor: '#141208', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25,
     shadowRadius: 8, elevation: 3,
   },
@@ -3776,10 +3772,7 @@ const styles = StyleSheet.create({
   // player cards, so the avatar reads as part of the same material
   // system rather than a plain grey box.
   homeWatchAvatarEdge: { position: 'absolute', top: 0, left: 0, right: 0, height: 1 },
-  // Sits flush to the bottom so it reads as a portrait crop rather than
-  // a floating icon.
-  homeWatchSilhouette: { width: 34, height: 34, opacity: 0.3 },
-  homeWatchPhoto: { width: 44, height: 44 },
+  homeWatchInitials: { fontSize: 15, fontWeight: '700', letterSpacing: 0.3 },
   homeWatchText: { flex: 1, fontSize: 13, color: '#57534a', lineHeight: 18 },
   emptyStateWrap: { alignItems: 'center', paddingVertical: 20 },
   emptyStateIcon: { fontSize: 32, marginBottom: 8, opacity: 0.5 },
