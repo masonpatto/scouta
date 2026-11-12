@@ -58,8 +58,8 @@
 //    independent per-90 inputs, there will always be another player
 //    with a freak number on SOME stat -- this doesn't converge by
 //    patching one input at a time.
-// 3. FINAL design: drop the custom production score entirely. The only
-//    inputs are Sportmonks' own `rating` (shrunk toward a baseline by
+// 3. Drop the custom production score entirely. The only inputs are
+//    Sportmonks' own `rating` (shrunk toward a baseline by
 //    games-equivalent playing time, so a tiny sample can't dominate), a
 //    small bonus for a short list of genuinely elite clubs (gated on
 //    actually having played, not just being on the books), and a
@@ -70,6 +70,17 @@
 //    real super-sub) via a throwaway debug Edge Function before this
 //    went live; see scaleRating()'s own comment for the resulting
 //    numbers.
+// 4. Point 3 fixed mid-table-out-rates-big-club, but the INVERSE still
+//    got through live: a Centre Back landed at 93 (above Van Dijk's
+//    validated 87) and a Defensive Midfielder at a relegation-battling
+//    Serie A side landed at 90 (level with Haaland/Rice) -- Sportmonks'
+//    per-match rating still rewards raw defensive-action volume well
+//    beyond real-world reputation, untouched by points 1-3. Added two
+//    narrow, one-directional ceilings (clip down only, never raise) --
+//    see the comment right above computeRating() for the detail -- plus
+//    a genuine bug fix found along the way: three ELITE_CLUBS entries
+//    were spelled in a way Sportmonks never actually returns, so those
+//    clubs' players silently never got the elite bonus at all.
 //
 // Deploy: paste this file's contents into a new Edge Function named
 // "sync-sportmonks-players" in the Supabase dashboard. Requires one
@@ -155,10 +166,17 @@ function leagueStrength(leagueName: string | null): number {
 // possession-heavy system) can out-produce a very good player at a much
 // bigger club on raw per-90 numbers alone, without being the better
 // player by real-world reputation.
+// Spellings confirmed against this project's own live `players.club`
+// values (2026-11-12), not assumed -- three of these (Barcelona, Bayern
+// Munich, Atlético Madrid) were previously spelled in a way Sportmonks
+// never actually returns, so those three clubs' players silently never
+// got the elite bonus at all. Found while investigating the rating
+// overhaul below; fixed as part of the same pass since it's the same
+// root cause (reputation signal not reaching the formula correctly).
 const ELITE_CLUBS = new Set([
   "Manchester City", "Arsenal", "Liverpool", "Manchester United", "Chelsea", "Tottenham Hotspur",
-  "Real Madrid", "Barcelona", "Atlético Madrid",
-  "Bayern Munich", "Borussia Dortmund",
+  "Real Madrid", "FC Barcelona", "Atlético de Madrid",
+  "FC Bayern München", "Borussia Dortmund",
   "Juventus", "Inter", "AC Milan", "Napoli",
 ]);
 const ELITE_CLUB_BONUS = 0.3;
@@ -221,11 +239,44 @@ function scaleRating(raw: number): number {
   return Math.max(40, Math.min(99, Math.round(scaled)));
 }
 
+// Rating pipeline, point 4 (2026-11-12): the design above (point 3)
+// fixed the "mid-table player out-rates a big-club star" case, but two
+// real, user-caught outliers showed the INVERSE failure survives it --
+// Sportmonks' per-match rating still rewards raw defensive-action
+// volume (clearances, blocks, interceptions, aerial duels) far more
+// generously than real-world reputation justifies, with nothing in the
+// pipeline to catch it:
+//   - A Centre Back at a Premier League club landed at 93 -- above
+//     Van Dijk's validated 87 -- despite no real-world case for being
+//     rated above him.
+//   - A Defensive Midfielder at a relegation-battling Serie A side
+//     (Frosinone, not remotely an elite club) landed at 90, level with
+//     Haaland/Rice.
+// Two narrow, ONE-DIRECTIONAL ceilings (they only ever clip a rating
+// down, never raise one, so every already-validated named player above
+// is unaffected unless they were already at/above the ceiling):
+//   1. 88+ is reserved for players with an actual reputation signal
+//      (elite-club minutes, same ELITE_CLUBS/MIN_GAMES_FOR_ELITE_BONUS
+//      gate as the bonus above) -- an obscure mid-table player's raw
+//      stats alone can no longer buy a top-tier rating.
+//   2. Pure defensive positions (Centre Back, Full Back) additionally
+//      cap a couple of points lower, regardless of club, since that's
+//      specifically where the defensive-action-volume bias shows up.
+//      Defensive Midfield is deliberately NOT included here -- a
+//      genuinely elite deep-lying playmaker (a Rodri, a Kimmich) can
+//      legitimately earn a rating up there and shouldn't be clipped
+//      alongside the obscure case above, which the non-elite ceiling
+//      already catches on its own.
+const NON_ELITE_RATING_CEILING = 87;
+const DEFENSIVE_POSITION_RATING_CEILING = 88;
+const DEFENSIVE_POSITIONS = new Set(["Centre Back", "Left Back", "Right Back"]);
+
 function computeRating(
   rawRating: number | null,
   minutes: number,
   club: string,
-  leagueName: string
+  leagueName: string,
+  positionName: string | null
 ): number {
   const gamesEquivalent = minutes / 90;
   const shrunkRating = rawRating !== null ? shrink(rawRating, BASELINE_RAW_RATING, gamesEquivalent) : BASELINE_RAW_RATING;
@@ -233,7 +284,12 @@ function computeRating(
   const eliteBonus = isElite ? ELITE_CLUB_BONUS : 0;
   const strength = leagueStrength(leagueName);
   const finalRaw = (shrunkRating + eliteBonus) * strength + (1 - strength) * BASELINE_RAW_RATING;
-  return scaleRating(finalRaw);
+  let rating = scaleRating(finalRaw);
+  if (!isElite) rating = Math.min(rating, NON_ELITE_RATING_CEILING);
+  if (positionName && DEFENSIVE_POSITIONS.has(positionName)) {
+    rating = Math.min(rating, DEFENSIVE_POSITION_RATING_CEILING);
+  }
+  return rating;
 }
 
 Deno.serve(async () => {
@@ -328,7 +384,7 @@ Deno.serve(async () => {
         const details = statRow?.details ?? [];
         const rawRating = extractRating(p.statistics, team.seasonId);
         const minutes = statTotal(details, STAT.MINUTES);
-        const rating100 = computeRating(rawRating, minutes, team.name, team.leagueName);
+        const rating100 = computeRating(rawRating, minutes, team.name, team.leagueName, positionName);
         const seedPrice = Math.max(10, Math.round(rating100 * 2));
 
         const { error } = await supabase.rpc("upsert_sportmonks_player", {
