@@ -3137,8 +3137,14 @@ const styles = StyleSheet.create({
   homeSectionHead: { paddingHorizontal: 22, marginBottom: 12, marginTop: 30 },
   homeSectionTitle: { fontSize: 18, fontWeight: '800', color: '#161410', letterSpacing: -0.3 },
   homeSectionSub: { fontSize: 12, color: '#918c81', fontWeight: '500', marginTop: 2 },
+  // No fixed height -- a long club/position detail line wraps to two
+  // lines for some players and not others, and a fixed height clipped
+  // that overflow (via playerRow's own overflow: hidden), looking like
+  // the card's content was cut off and making row-to-row spacing look
+  // inconsistent. Sized to content instead, same as the Discover/
+  // Portfolio cards, which don't have this problem.
   homeHeroCardWrap: {
-    width: 300, height: 140, marginHorizontal: 0, marginRight: 13, paddingVertical: 14,
+    width: 300, marginHorizontal: 0, marginRight: 13, paddingVertical: 14,
   },
   homeWatchRow: {
     flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 22,
