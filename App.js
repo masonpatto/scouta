@@ -3461,6 +3461,11 @@ const styles = StyleSheet.create({
     // how the premium reference designs did it.
     shadowColor: '#141208', shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.3, shadowRadius: 22,
     elevation: 5, position: 'relative', overflow: 'hidden',
+    // Mobile Safari repaints a rounded-corner + overflow:hidden element's
+    // clip during momentum scroll, which can flash a hard rectangular
+    // edge for a frame -- looks like the card's top getting cut off.
+    // Promoting the card to its own GPU layer avoids the repaint.
+    ...(Platform.OS === 'web' ? { willChange: 'transform' } : {}),
   },
   // Hairline along the top edge -- catches the light like a real card
   // edge and gives the tier its accent without an outline.
