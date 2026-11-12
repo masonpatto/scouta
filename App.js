@@ -1043,6 +1043,15 @@ function AppInner() {
   const [buyAmount, setBuyAmount] = useState('');
   const [buySuccessInfo, setBuySuccessInfo] = useState(null);
 
+  // Scout's Notebook: a dedicated full-screen thesis editor, instead of
+  // routing it through the generic one-line showPrompt above -- the
+  // one place in the app meant for a user's own written opinion
+  // deserves to feel like an actual notebook page, not a bare text
+  // field borrowed from the Sell flow.
+  const [notebookHolding, setNotebookHolding] = useState(null);
+  const [notebookDraft, setNotebookDraft] = useState('');
+  const [notebookSaving, setNotebookSaving] = useState(false);
+
   // Rendered at every screen that can call showPrompt (standalone login,
   // the logged-in app) -- a plain Modal works identically on every
   // platform, unlike Alert.prompt.
@@ -1082,6 +1091,94 @@ function AppInner() {
             </View>
           </View>
         </KeyboardAvoidingView>
+      </Modal>
+    );
+  }
+
+  // A real notebook page, not a generic text-field modal: ruled lines,
+  // a red margin rule, and the player's name set as a report title --
+  // called directly as {ScoutNotebookRenderer()}, same reasoning as
+  // BuyModalRenderer below (it has no hooks of its own, so a plain
+  // function call avoids forcing a remount of its entrance animation
+  // on every keystroke while typing the thesis).
+  const NOTEBOOK_LINE_HEIGHT = 30;
+  const NOTEBOOK_RULE_COUNT = 18;
+  function ScoutNotebookRenderer() {
+    if (!notebookHolding) return null;
+    const player = notebookHolding.players;
+    const isNewEntry = !notebookHolding.thesis;
+    const filedDate = !isNewEntry && notebookHolding.updated_at
+      ? new Date(notebookHolding.updated_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+      : null;
+
+    function close() {
+      setNotebookHolding(null);
+      setNotebookDraft('');
+    }
+
+    return (
+      <Modal visible transparent={false} animationType="slide" onRequestClose={close}>
+        <SafeAreaView style={styles.notebookScreen}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+            <View style={styles.notebookTopBar}>
+              <TouchableOpacity onPress={close} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                <Text style={styles.notebookClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.notebookPage}>
+              <View style={styles.notebookHeader}>
+                <View style={styles.notebookHeaderTop}>
+                  <ChipIcon width={22} height={16} />
+                  <Text style={styles.notebookEyebrow}>SCOUT'S NOTEBOOK</Text>
+                </View>
+                <Text style={[styles.notebookPlayerName, fontsLoaded && { fontFamily: 'Fraunces-SemiBold' }]}>
+                  {player.name}
+                </Text>
+                <Text style={styles.notebookPlayerSub}>
+                  {[player.position, player.club].filter(Boolean).join(' · ')}
+                  {filedDate ? `  ·  Filed ${filedDate}` : '  ·  New entry'}
+                </Text>
+              </View>
+
+              <View style={styles.notebookRuledArea}>
+                <View style={styles.notebookMarginRule} />
+                <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                  {Array.from({ length: NOTEBOOK_RULE_COUNT }).map((_, i) => (
+                    <View
+                      key={i}
+                      style={[styles.notebookRuleLine, { top: NOTEBOOK_LINE_HEIGHT * (i + 1) }]}
+                    />
+                  ))}
+                </View>
+                <TextInput
+                  style={styles.notebookInput}
+                  value={notebookDraft}
+                  onChangeText={setNotebookDraft}
+                  placeholder="Why did you buy this player? What are you watching for?"
+                  placeholderTextColor="rgba(43,38,32,0.35)"
+                  multiline
+                  autoFocus
+                  textAlignVertical="top"
+                />
+              </View>
+            </View>
+
+            <View style={styles.notebookFooter}>
+              <PressScale viewStyle={{ flex: 1 }} style={styles.promptCancelBtn} onPress={close}>
+                <Text style={styles.promptCancelText}>Cancel</Text>
+              </PressScale>
+              <PressScale
+                viewStyle={{ flex: 1 }}
+                style={[styles.notebookSaveBtn, notebookSaving && styles.heroButtonDisabled]}
+                disabled={notebookSaving}
+                onPress={saveThesis}
+              >
+                <Text style={styles.notebookSaveText}>{notebookSaving ? 'Filing…' : 'File this report'}</Text>
+              </PressScale>
+            </View>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
       </Modal>
     );
   }
@@ -1357,7 +1454,7 @@ function AppInner() {
     setHoldingsError('');
     try {
       const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/holdings?select=id,shares,avg_buy_price,thesis,players(id,name,current_price,position,club)`,
+        `${SUPABASE_URL}/rest/v1/holdings?select=id,shares,avg_buy_price,thesis,updated_at,players(id,name,current_price,position,club)`,
         { headers: authHeaders() }
       );
       const data = await res.json();
@@ -1531,31 +1628,33 @@ function AppInner() {
   // Real Scout Journal - a direct PATCH to holdings.thesis, which the
   // RLS policy + lockdown trigger in scouta_schema_part3.sql allow
   // (that column only; shares/avg_buy_price stay protected).
-  async function handleEditThesis(holding) {
-    showPrompt({
-      title: `Your thesis on ${holding.players.name}`,
-      message: 'Why did you buy this player?',
-      defaultValue: holding.thesis || '',
-      submitLabel: 'Save',
-      onSubmit: async (input) => {
-        if (input === null || input === undefined) return; // cancelled
-        try {
-          const res = await fetch(`${SUPABASE_URL}/rest/v1/holdings?id=eq.${holding.id}`, {
-            method: 'PATCH',
-            headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-            body: JSON.stringify({ thesis: input }),
-          });
-          if (!res.ok) {
-            const data = await res.json();
-            Alert.alert('Could not save', data.message || 'Something went wrong.');
-          } else {
-            await fetchHoldings();
-          }
-        } catch (e) {
-          Alert.alert('Error', e.message);
-        }
-      },
-    });
+  function handleEditThesis(holding) {
+    setNotebookDraft(holding.thesis || '');
+    setNotebookHolding(holding);
+  }
+
+  async function saveThesis() {
+    const holding = notebookHolding;
+    if (!holding) return;
+    setNotebookSaving(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/holdings?id=eq.${holding.id}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ thesis: notebookDraft }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        Alert.alert('Could not save', data.message || 'Something went wrong.');
+      } else {
+        setNotebookHolding(null);
+        await fetchHoldings();
+      }
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setNotebookSaving(false);
+    }
   }
 
   async function fetchPlayers() {
@@ -3147,6 +3246,7 @@ function AppInner() {
         </Modal>
         <PromptModalRenderer />
         {BuyModalRenderer()}
+        {ScoutNotebookRenderer()}
       </SafeAreaView>
     );
   }
@@ -3829,6 +3929,38 @@ const styles = StyleSheet.create({
   },
   journalIcon: { fontSize: 13, marginTop: 1 },
   journalText: { flex: 1, fontSize: 12.5, color: '#57534a', fontStyle: 'italic', lineHeight: 17 },
+  // Scout's Notebook: a full-screen page, not a modal textbox. Warm
+  // paper outside, a lighter "page" card, a red margin rule and evenly
+  // spaced horizontal rules behind the input -- a literal notebook
+  // page, since that's the actual ask, not a generic card with a
+  // bigger text box.
+  notebookScreen: { flex: 1, backgroundColor: '#efe9da' },
+  notebookTopBar: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4, alignItems: 'flex-end' },
+  notebookClose: { fontSize: 16, color: '#8a8578', padding: 6 },
+  notebookPage: {
+    flex: 1, backgroundColor: '#fdfbf2', marginHorizontal: 18, marginBottom: 14, borderRadius: 4,
+    borderWidth: 1, borderColor: '#e8e0cc', padding: 22,
+    shadowColor: '#161410', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.08, shadowRadius: 18, elevation: 3,
+  },
+  notebookHeader: { paddingBottom: 16, marginBottom: 16, borderBottomWidth: 1, borderBottomColor: '#e8e0cc' },
+  notebookHeaderTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  notebookEyebrow: { fontSize: 10.5, fontWeight: '700', color: '#a39a86', letterSpacing: 2 },
+  notebookPlayerName: { fontSize: 22, fontWeight: '700', color: '#2b2620', letterSpacing: -0.3 },
+  notebookPlayerSub: { fontSize: 12.5, color: '#8a8578', marginTop: 3 },
+  notebookRuledArea: { flex: 1, position: 'relative' },
+  notebookMarginRule: {
+    position: 'absolute', top: 0, bottom: 0, left: 34, width: 1.5, backgroundColor: 'rgba(193,72,63,0.35)',
+  },
+  notebookRuleLine: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: 'rgba(43,38,32,0.1)' },
+  notebookInput: {
+    flex: 1, fontSize: 15.5, lineHeight: 30, color: '#2b2620', paddingLeft: 48, paddingTop: 1,
+    borderWidth: 0, outlineStyle: 'none',
+  },
+  notebookFooter: { flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingBottom: 20 },
+  notebookSaveBtn: {
+    flex: 1, paddingVertical: 15, borderRadius: 14, alignItems: 'center', backgroundColor: '#161410',
+  },
+  notebookSaveText: { fontSize: 14.5, fontWeight: '700', color: '#faf9f6' },
   moversSplit: { flexDirection: 'row', gap: 14, paddingHorizontal: 22, marginBottom: 24 },
   moversColLabel: { fontSize: 10.5, fontWeight: '700', color: '#918c81', letterSpacing: 0.6, marginBottom: 8 },
   moverRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: 6 },
