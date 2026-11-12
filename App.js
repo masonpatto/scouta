@@ -1095,14 +1095,15 @@ function AppInner() {
     );
   }
 
-  // A real notebook page, not a generic text-field modal: ruled lines,
-  // a red margin rule, and the player's name set as a report title --
-  // called directly as {ScoutNotebookRenderer()}, same reasoning as
+  // A real notebook page, not a generic text-field modal -- but a
+  // premium field journal (fine dot grid, a bound spine accent, a
+  // stamped badge) rather than a child's ruled exercise book. Called
+  // directly as {ScoutNotebookRenderer()}, same reasoning as
   // BuyModalRenderer below (it has no hooks of its own, so a plain
   // function call avoids forcing a remount of its entrance animation
   // on every keystroke while typing the thesis).
-  const NOTEBOOK_LINE_HEIGHT = 30;
-  const NOTEBOOK_RULE_COUNT = 18;
+  const NOTEBOOK_DOT_SPACING = 26;
+  const NOTEBOOK_DOT_COUNT = 330;
   function ScoutNotebookRenderer() {
     if (!notebookHolding) return null;
     const player = notebookHolding.players;
@@ -1121,46 +1122,53 @@ function AppInner() {
         <SafeAreaView style={styles.notebookScreen}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
             <View style={styles.notebookTopBar}>
-              <TouchableOpacity onPress={close} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <TouchableOpacity
+                style={styles.notebookCloseBtn}
+                onPress={close}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              >
                 <Text style={styles.notebookClose}>✕</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.notebookPage}>
-              <View style={styles.notebookHeader}>
-                <View style={styles.notebookHeaderTop}>
-                  <ChipIcon width={22} height={16} />
-                  <Text style={styles.notebookEyebrow}>SCOUT'S NOTEBOOK</Text>
+              <View style={styles.notebookSpine} />
+              <View style={styles.notebookPageBody}>
+                <View style={styles.notebookHeader}>
+                  <View style={styles.notebookHeaderTop}>
+                    <View style={styles.notebookBadge}>
+                      <ChipIcon width={18} height={13} />
+                    </View>
+                    <Text style={styles.notebookEyebrow}>Scout's Notebook</Text>
+                  </View>
+                  <Text style={[styles.notebookPlayerName, fontsLoaded && { fontFamily: 'Fraunces-SemiBold' }]}>
+                    {player.name}
+                  </Text>
+                  <Text style={styles.notebookPlayerSub}>
+                    {[player.position, player.club].filter(Boolean).join(' · ')}
+                    {filedDate ? `  ·  Filed ${filedDate}` : '  ·  New entry'}
+                  </Text>
                 </View>
-                <Text style={[styles.notebookPlayerName, fontsLoaded && { fontFamily: 'Fraunces-SemiBold' }]}>
-                  {player.name}
-                </Text>
-                <Text style={styles.notebookPlayerSub}>
-                  {[player.position, player.club].filter(Boolean).join(' · ')}
-                  {filedDate ? `  ·  Filed ${filedDate}` : '  ·  New entry'}
-                </Text>
-              </View>
 
-              <View style={styles.notebookRuledArea}>
-                <View style={styles.notebookMarginRule} />
-                <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-                  {Array.from({ length: NOTEBOOK_RULE_COUNT }).map((_, i) => (
-                    <View
-                      key={i}
-                      style={[styles.notebookRuleLine, { top: NOTEBOOK_LINE_HEIGHT * (i + 1) }]}
-                    />
-                  ))}
+                <View style={styles.notebookRuledArea}>
+                  <View pointerEvents="none" style={styles.notebookDotGrid}>
+                    {Array.from({ length: NOTEBOOK_DOT_COUNT }).map((_, i) => (
+                      <View key={i} style={styles.notebookDotCell}>
+                        <View style={styles.notebookDot} />
+                      </View>
+                    ))}
+                  </View>
+                  <TextInput
+                    style={styles.notebookInput}
+                    value={notebookDraft}
+                    onChangeText={setNotebookDraft}
+                    placeholder="Why did you buy this player? What are you watching for?"
+                    placeholderTextColor="rgba(43,38,32,0.35)"
+                    multiline
+                    autoFocus
+                    textAlignVertical="top"
+                  />
                 </View>
-                <TextInput
-                  style={styles.notebookInput}
-                  value={notebookDraft}
-                  onChangeText={setNotebookDraft}
-                  placeholder="Why did you buy this player? What are you watching for?"
-                  placeholderTextColor="rgba(43,38,32,0.35)"
-                  multiline
-                  autoFocus
-                  textAlignVertical="top"
-                />
               </View>
             </View>
 
@@ -3929,31 +3937,49 @@ const styles = StyleSheet.create({
   },
   journalIcon: { fontSize: 13, marginTop: 1 },
   journalText: { flex: 1, fontSize: 12.5, color: '#57534a', fontStyle: 'italic', lineHeight: 17 },
-  // Scout's Notebook: a full-screen page, not a modal textbox. Warm
-  // paper outside, a lighter "page" card, a red margin rule and evenly
-  // spaced horizontal rules behind the input -- a literal notebook
-  // page, since that's the actual ask, not a generic card with a
-  // bigger text box.
-  notebookScreen: { flex: 1, backgroundColor: '#efe9da' },
+  // Scout's Notebook: a full-screen page, not a modal textbox. A bound
+  // field journal, not a child's ruled exercise book -- a brass spine
+  // accent, a stamped badge, and a fine dot grid (the stationery-brand
+  // signal for "premium notebook") instead of a red margin rule and
+  // primary-school horizontal rules.
+  notebookScreen: { flex: 1, backgroundColor: '#e8e0ca' },
   notebookTopBar: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4, alignItems: 'flex-end' },
-  notebookClose: { fontSize: 16, color: '#8a8578', padding: 6 },
+  notebookCloseBtn: {
+    width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: 'rgba(43,38,32,0.05)', borderWidth: 1, borderColor: 'rgba(43,38,32,0.1)',
+  },
+  notebookClose: { fontSize: 13, color: '#7a7262' },
   notebookPage: {
-    flex: 1, backgroundColor: '#fdfbf2', marginHorizontal: 18, marginBottom: 14, borderRadius: 4,
-    borderWidth: 1, borderColor: '#e8e0cc', padding: 22,
-    shadowColor: '#161410', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.08, shadowRadius: 18, elevation: 3,
+    flex: 1, flexDirection: 'row', backgroundColor: '#fdfbf2', marginHorizontal: 18, marginBottom: 14, borderRadius: 6,
+    borderWidth: 1, borderColor: '#e2d8bd', overflow: 'hidden',
+    shadowColor: '#161410', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.12, shadowRadius: 22, elevation: 4,
   },
-  notebookHeader: { paddingBottom: 16, marginBottom: 16, borderBottomWidth: 1, borderBottomColor: '#e8e0cc' },
-  notebookHeaderTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  notebookEyebrow: { fontSize: 10.5, fontWeight: '700', color: '#a39a86', letterSpacing: 2 },
-  notebookPlayerName: { fontSize: 22, fontWeight: '700', color: '#2b2620', letterSpacing: -0.3 },
-  notebookPlayerSub: { fontSize: 12.5, color: '#8a8578', marginTop: 3 },
+  notebookSpine: { width: 6, backgroundColor: '#ad8e55' },
+  notebookPageBody: { flex: 1 },
+  notebookHeader: {
+    paddingTop: 22, paddingHorizontal: 22, paddingBottom: 16, marginBottom: 4,
+    borderBottomWidth: 1, borderBottomColor: 'rgba(173,142,85,0.3)',
+  },
+  notebookHeaderTop: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 14 },
+  notebookBadge: {
+    width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#f5efdc', borderWidth: 1, borderColor: 'rgba(173,142,85,0.45)',
+  },
+  notebookEyebrow: { fontSize: 11, fontWeight: '600', color: '#9c8552', letterSpacing: 2.2 },
+  notebookPlayerName: { fontSize: 23, fontWeight: '700', color: '#241f18', letterSpacing: -0.3 },
+  notebookPlayerSub: { fontSize: 12.5, color: '#938a72', marginTop: 4 },
   notebookRuledArea: { flex: 1, position: 'relative' },
-  notebookMarginRule: {
-    position: 'absolute', top: 0, bottom: 0, left: 34, width: 1.5, backgroundColor: 'rgba(193,72,63,0.35)',
+  notebookDotGrid: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    flexDirection: 'row', flexWrap: 'wrap', overflow: 'hidden',
   },
-  notebookRuleLine: { position: 'absolute', left: 0, right: 0, height: 1, backgroundColor: 'rgba(43,38,32,0.1)' },
+  notebookDotCell: {
+    width: 26, height: 26, alignItems: 'center', justifyContent: 'center',
+  },
+  notebookDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: 'rgba(154,130,74,0.28)' },
   notebookInput: {
-    flex: 1, fontSize: 15.5, lineHeight: 30, color: '#2b2620', paddingLeft: 48, paddingTop: 1,
+    flex: 1, fontSize: 15.5, lineHeight: 26, color: '#241f18',
+    paddingTop: 10, paddingHorizontal: 22, paddingBottom: 12,
     borderWidth: 0, outlineStyle: 'none',
   },
   notebookFooter: { flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingBottom: 20 },
