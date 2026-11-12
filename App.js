@@ -171,6 +171,10 @@ function flagEmoji(code) {
   return cc.replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
 }
 
+const CONVICTION_ORDER = ['low', 'medium', 'high'];
+const CONVICTION_LABELS = { low: 'Low', medium: 'Medium', high: 'High' };
+const HITSLOP = { top: 12, bottom: 12, left: 12, right: 12 };
+
 
 // Real guilloché texture, pulled directly from the original mockup -- a
 // static SVG data URI, rendered as a repeating tile. No new package needed.
@@ -1043,14 +1047,20 @@ function AppInner() {
   const [buyAmount, setBuyAmount] = useState('');
   const [buySuccessInfo, setBuySuccessInfo] = useState(null);
 
-  // Scout's Notebook: a dedicated full-screen thesis editor, instead of
-  // routing it through the generic one-line showPrompt above -- the
-  // one place in the app meant for a user's own written opinion
-  // deserves to feel like an actual notebook page, not a bare text
-  // field borrowed from the Sell flow.
-  const [notebookHolding, setNotebookHolding] = useState(null);
-  const [notebookDraft, setNotebookDraft] = useState('');
-  const [notebookSaving, setNotebookSaving] = useState(false);
+  // Scout Journal: a real chronological history of investment theses
+  // per player (title, freeform body, conviction, price target), not
+  // a single text field. journalEntries holds every entry for the
+  // signed-in user across all players; journalPlayerFilter scopes the
+  // list screen to one player (opened from a Portfolio holding) or
+  // null for the global "every entry" view (opened from Profile).
+  const [journalEntries, setJournalEntries] = useState([]);
+  const [journalError, setJournalError] = useState('');
+  const [journalOpen, setJournalOpen] = useState(false);
+  const [journalPlayerFilter, setJournalPlayerFilter] = useState(null);
+  const [journalPickerOpen, setJournalPickerOpen] = useState(false);
+  const [journalPickerQuery, setJournalPickerQuery] = useState('');
+  const [journalDraft, setJournalDraft] = useState(null);
+  const [journalSaving, setJournalSaving] = useState(false);
 
   // Rendered at every screen that can call showPrompt (standalone login,
   // the logged-in app) -- a plain Modal works identically on every
@@ -1095,79 +1105,350 @@ function AppInner() {
     );
   }
 
-  // A dedicated full-screen editor instead of the generic one-line
-  // prompt modal, matching the app's own restrained design language
-  // (plain white card, hairline borders, serif headline) rather than
-  // reaching for decorative notebook/stationery motifs. Called
-  // directly as {ScoutNotebookRenderer()}, same reasoning as
-  // BuyModalRenderer below (it has no hooks of its own, so a plain
-  // function call avoids forcing a remount of its entrance animation
-  // on every keystroke while typing the thesis).
-  function ScoutNotebookRenderer() {
-    if (!notebookHolding) return null;
-    const player = notebookHolding.players;
-    const isNewEntry = !notebookHolding.thesis;
-    const filedDate = !isNewEntry && notebookHolding.updated_at
-      ? new Date(notebookHolding.updated_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-      : null;
+  // Scout Journal: the list screen, either scoped to one player
+  // (opened from a Portfolio holding) or global across every player
+  // (opened from Profile). Called directly as {JournalRenderer()},
+  // same reasoning as BuyModalRenderer below -- it has no hooks of its
+  // own, so a plain function call avoids forcing a remount on every
+  // keystroke in a sibling screen's state.
+  function JournalRenderer() {
+    if (!journalOpen) return null;
+    const scopePlayer = journalPlayerFilter;
+    const entries = (scopePlayer
+      ? journalEntries.filter((e) => e.player_id === scopePlayer.id)
+      : journalEntries
+    ).slice().sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
 
     function close() {
-      setNotebookHolding(null);
-      setNotebookDraft('');
+      setJournalOpen(false);
+      setJournalPlayerFilter(null);
+    }
+
+    function handleNew() {
+      if (scopePlayer) {
+        setJournalDraft({ id: null, player: scopePlayer, title: '', body: '', conviction: null, priceExpectation: '' });
+      } else {
+        setJournalPickerQuery('');
+        setJournalPickerOpen(true);
+      }
     }
 
     return (
       <Modal visible transparent={false} animationType="slide" onRequestClose={close}>
-        <SafeAreaView style={styles.notebookScreen}>
+        <SafeAreaView style={styles.journalScreen}>
+          <View style={styles.journalTopBar}>
+            <TouchableOpacity onPress={close} hitSlop={HITSLOP}>
+              <Text style={styles.journalBack}>‹ Back</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={handleNew} hitSlop={HITSLOP}>
+              <Text style={styles.journalNew}>New entry</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.journalHeaderBlock}>
+            <Text style={styles.journalEyebrow}>Scout Journal</Text>
+            <Text style={[styles.journalTitle, fontsLoaded && { fontFamily: 'Fraunces-SemiBold' }]}>
+              {scopePlayer ? scopePlayer.name : 'Every entry'}
+            </Text>
+            {scopePlayer ? (
+              <Text style={styles.journalSubtitle}>
+                {[scopePlayer.position, scopePlayer.club].filter(Boolean).join(' · ')}
+              </Text>
+            ) : null}
+          </View>
+
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
+            {entries.length === 0 ? (
+              <View style={styles.journalEmptyWrap}>
+                <Text style={styles.journalEmptyText}>
+                  {scopePlayer
+                    ? `No entries yet. Start your scouting file on ${scopePlayer.name}.`
+                    : 'Your journal is empty. Pick a player to begin.'}
+                </Text>
+                <TouchableOpacity onPress={handleNew}>
+                  <Text style={styles.journalEmptyLink}>Write your first entry</Text>
+                </TouchableOpacity>
+              </View>
+            ) : entries.map((e) => (
+              <TouchableOpacity
+                key={e.id}
+                style={styles.journalEntryRow}
+                onPress={() => setJournalDraft({
+                  id: e.id,
+                  player: e.players || scopePlayer,
+                  title: e.title || '',
+                  body: e.body || '',
+                  conviction: e.conviction,
+                  priceExpectation: e.price_expectation != null ? String(e.price_expectation) : '',
+                })}
+              >
+                <View style={styles.journalEntryMetaRow}>
+                  {!scopePlayer ? (
+                    <Text style={styles.journalEntryPlayer} numberOfLines={1}>{e.players?.name || 'Unknown player'}</Text>
+                  ) : null}
+                  <Text style={styles.journalEntryDate}>
+                    {new Date(e.updated_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    {e.conviction ? `  ·  ${CONVICTION_LABELS[e.conviction]} conviction` : ''}
+                  </Text>
+                </View>
+                <Text style={[styles.journalEntryTitle, fontsLoaded && { fontFamily: 'Fraunces-SemiBold' }]} numberOfLines={1}>
+                  {e.title || 'Untitled entry'}
+                </Text>
+                {e.body ? (
+                  <Text style={styles.journalEntryExcerpt} numberOfLines={2}>{e.body}</Text>
+                ) : null}
+                <View style={styles.journalEntryDivider} />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+    );
+  }
+
+  // The "who's this about?" step for a new entry started from the
+  // global journal (a player-scoped entry already knows its player).
+  // Reuses the same search UI as the Home search bar.
+  function JournalPickerRenderer() {
+    if (!journalPickerOpen) return null;
+    const q = journalPickerQuery.trim().toLowerCase();
+    const matches = q.length === 0 ? [] : players
+      .filter((p) => p.name.toLowerCase().includes(q) || (p.club || '').toLowerCase().includes(q))
+      .slice(0, 20);
+
+    function close() {
+      setJournalPickerOpen(false);
+      setJournalPickerQuery('');
+    }
+
+    function pick(player) {
+      setJournalPickerOpen(false);
+      setJournalPickerQuery('');
+      setJournalDraft({ id: null, player, title: '', body: '', conviction: null, priceExpectation: '' });
+    }
+
+    return (
+      <Modal visible transparent={false} animationType="slide" onRequestClose={close}>
+        <SafeAreaView style={styles.journalScreen}>
+          <View style={styles.journalTopBar}>
+            <TouchableOpacity onPress={close} hitSlop={HITSLOP}>
+              <Text style={styles.journalBack}>Cancel</Text>
+            </TouchableOpacity>
+            <View />
+          </View>
+          <View style={styles.journalHeaderBlock}>
+            <Text style={[styles.journalTitle, fontsLoaded && { fontFamily: 'Fraunces-SemiBold' }]}>New entry</Text>
+            <Text style={styles.journalSubtitle}>Who's this about?</Text>
+          </View>
+          <View style={[styles.homeSearchWrap, { marginHorizontal: 20 }]}>
+            <Text style={styles.homeSearchIcon}>🔍</Text>
+            <TextInput
+              style={styles.homeSearchInput}
+              placeholder="Search players"
+              placeholderTextColor="#918c81"
+              value={journalPickerQuery}
+              onChangeText={setJournalPickerQuery}
+              autoCapitalize="none"
+              autoFocus
+            />
+          </View>
+          <ScrollView style={{ flex: 1, marginTop: 8 }} keyboardShouldPersistTaps="handled">
+            {matches.map((p) => (
+              <TouchableOpacity key={p.id} style={styles.homeSearchRow} onPress={() => pick(p)}>
+                {p.nationality ? (
+                  <Text style={styles.homeSearchFlagEmoji}>{flagEmoji(p.nationality)}</Text>
+                ) : (
+                  <View style={styles.homeSearchFlagPlaceholder} />
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.homeSearchRowName}>{p.name}</Text>
+                  <Text style={styles.homeSearchRowMeta}>{[p.position, p.club].filter(Boolean).join(' · ')}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+            {q.length > 0 && matches.length === 0 ? (
+              <Text style={styles.homeSearchEmpty}>No players match "{journalPickerQuery}"</Text>
+            ) : null}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+    );
+  }
+
+  // The writing canvas itself -- the centrepiece of the feature. Title,
+  // a quiet conviction/target-price meta line, then one large freeform
+  // body field with no rigid structure forced on it.
+  function JournalEditorRenderer() {
+    if (!journalDraft) return null;
+    const draft = journalDraft;
+    const player = draft.player;
+
+    function close() {
+      setJournalDraft(null);
+    }
+
+    function patch(fields) {
+      setJournalDraft((prev) => (prev ? { ...prev, ...fields } : prev));
+    }
+
+    async function handleSave() {
+      if (journalSaving) return;
+      if (!draft.body.trim() && !draft.title.trim()) {
+        setJournalDraft(null);
+        return;
+      }
+      setJournalSaving(true);
+      try {
+        const payload = {
+          player_id: player.id,
+          title: draft.title.trim() || null,
+          body: draft.body,
+          conviction: draft.conviction,
+          price_expectation: draft.priceExpectation ? parseFloat(draft.priceExpectation) : null,
+        };
+        const res = draft.id
+          ? await fetch(`${SUPABASE_URL}/rest/v1/journal_entries?id=eq.${draft.id}`, {
+              method: 'PATCH',
+              headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+              body: JSON.stringify(payload),
+            })
+          : await fetch(`${SUPABASE_URL}/rest/v1/journal_entries`, {
+              method: 'POST',
+              headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+              body: JSON.stringify({ ...payload, user_id: session.user.id }),
+            });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          Alert.alert('Could not save', data.message || 'Something went wrong.');
+          return;
+        }
+        await fetchJournalEntries();
+        setJournalDraft(null);
+      } catch (e) {
+        Alert.alert('Error', e.message);
+      } finally {
+        setJournalSaving(false);
+      }
+    }
+
+    function handleDelete() {
+      if (!draft.id) return;
+      Alert.alert('Delete entry', 'This entry will be permanently removed.', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await fetch(`${SUPABASE_URL}/rest/v1/journal_entries?id=eq.${draft.id}`, {
+                method: 'DELETE',
+                headers: authHeaders(),
+              });
+              await fetchJournalEntries();
+              setJournalDraft(null);
+            } catch (e) {
+              Alert.alert('Error', e.message);
+            }
+          },
+        },
+      ]);
+    }
+
+    return (
+      <Modal visible transparent={false} animationType="slide" onRequestClose={close}>
+        <SafeAreaView style={styles.journalScreen}>
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-            <View style={styles.notebookTopBar}>
-              <TouchableOpacity onPress={close} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-                <Text style={styles.notebookClose}>✕</Text>
+            <View style={styles.journalTopBar}>
+              <TouchableOpacity onPress={close} hitSlop={HITSLOP}>
+                <Text style={styles.journalBack}>‹ Journal</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleSave} disabled={journalSaving} hitSlop={HITSLOP}>
+                <Text style={[styles.journalDone, journalSaving && { opacity: 0.4 }]}>
+                  {journalSaving ? 'Saving…' : 'Done'}
+                </Text>
               </TouchableOpacity>
             </View>
 
-            <View style={styles.notebookPage}>
-              <View style={styles.notebookHeader}>
-                <View style={styles.notebookHeaderTop}>
-                  <ChipIcon width={20} height={14} />
-                  <Text style={styles.notebookEyebrow}>Scout's Notebook</Text>
-                </View>
-                <Text style={[styles.notebookPlayerName, fontsLoaded && { fontFamily: 'Fraunces-SemiBold' }]}>
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={styles.journalEditorBody}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.journalEditorPlayerRow}>
+                {player.photo_url ? (
+                  <Image source={{ uri: player.photo_url }} style={styles.journalEditorPlayerPhoto} />
+                ) : (
+                  <View style={styles.journalEditorPlayerPhotoFallback}>
+                    <Text style={styles.journalEditorPlayerPhotoFallbackText}>
+                      {(player.name || '?').slice(0, 1)}
+                    </Text>
+                  </View>
+                )}
+                <Text style={styles.journalEditorPlayerName} numberOfLines={1}>
                   {player.name}
-                </Text>
-                <Text style={styles.notebookPlayerSub}>
+                  {[player.position, player.club].filter(Boolean).length ? '  ·  ' : ''}
                   {[player.position, player.club].filter(Boolean).join(' · ')}
-                  {filedDate ? `  ·  Filed ${filedDate}` : '  ·  New entry'}
                 </Text>
               </View>
 
-              <View style={styles.notebookRuledArea}>
-                <TextInput
-                  style={styles.notebookInput}
-                  value={notebookDraft}
-                  onChangeText={setNotebookDraft}
-                  placeholder="Why did you buy this player? What are you watching for?"
-                  placeholderTextColor="#b4ad9c"
-                  multiline
-                  autoFocus
-                  textAlignVertical="top"
-                />
-              </View>
-            </View>
+              <TextInput
+                style={[styles.journalTitleInput, fontsLoaded && { fontFamily: 'Fraunces-SemiBold' }]}
+                value={draft.title}
+                onChangeText={(t) => patch({ title: t })}
+                placeholder="Untitled entry"
+                placeholderTextColor="#c4bdac"
+              />
 
-            <View style={styles.notebookFooter}>
-              <PressScale viewStyle={{ flex: 1 }} style={styles.promptCancelBtn} onPress={close}>
-                <Text style={styles.promptCancelText}>Cancel</Text>
-              </PressScale>
-              <PressScale
-                viewStyle={{ flex: 1 }}
-                style={[styles.notebookSaveBtn, notebookSaving && styles.heroButtonDisabled]}
-                disabled={notebookSaving}
-                onPress={saveThesis}
-              >
-                <Text style={styles.notebookSaveText}>{notebookSaving ? 'Filing…' : 'File this report'}</Text>
-              </PressScale>
-            </View>
+              <View style={styles.journalMetaRow}>
+                <View style={styles.journalConvictionRow}>
+                  {CONVICTION_ORDER.map((key) => (
+                    <TouchableOpacity
+                      key={key}
+                      onPress={() => patch({ conviction: draft.conviction === key ? null : key })}
+                      hitSlop={{ top: 10, bottom: 10, left: 4, right: 4 }}
+                    >
+                      <Text style={[
+                        styles.journalConvictionWord,
+                        draft.conviction === key && styles.journalConvictionWordActive,
+                      ]}>
+                        {CONVICTION_LABELS[key]}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={styles.journalTargetRow}>
+                  <Text style={styles.journalTargetLabel}>Target</Text>
+                  <TextInput
+                    style={styles.journalTargetInput}
+                    value={draft.priceExpectation}
+                    onChangeText={(t) => patch({ priceExpectation: t.replace(/[^0-9.]/g, '') })}
+                    placeholder="—"
+                    placeholderTextColor="#c4bdac"
+                    keyboardType="numeric"
+                  />
+                  <Text style={styles.journalTargetSuffix}>SC</Text>
+                </View>
+              </View>
+
+              <View style={styles.journalDivider} />
+
+              <TextInput
+                style={styles.journalBodyInput}
+                value={draft.body}
+                onChangeText={(t) => patch({ body: t })}
+                placeholder="Observations, strengths, weaknesses, reasoning — write freely."
+                placeholderTextColor="#b4ad9c"
+                multiline
+                textAlignVertical="top"
+                autoFocus={!draft.id}
+              />
+
+              {draft.id ? (
+                <TouchableOpacity onPress={handleDelete} style={{ marginTop: 32, marginBottom: 12 }}>
+                  <Text style={styles.journalDeleteText}>Delete entry</Text>
+                </TouchableOpacity>
+              ) : null}
+            </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
@@ -1311,6 +1592,7 @@ function AppInner() {
       await Promise.all([
         fetchPlayers(), fetchCash(), fetchHoldings(), fetchTransactions(),
         fetchWatchlist(), fetchLeaderboard(), fetchMilestones(), fetchNotifications(),
+        fetchJournalEntries(),
       ]);
     } finally {
       setRefreshing(false);
@@ -1331,6 +1613,7 @@ function AppInner() {
       fetchLeaderboard();
       fetchMilestones();
       fetchNotifications();
+      fetchJournalEntries();
     }
   }, [session]);
 
@@ -1445,7 +1728,7 @@ function AppInner() {
     setHoldingsError('');
     try {
       const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/holdings?select=id,shares,avg_buy_price,thesis,updated_at,players(id,name,current_price,position,club)`,
+        `${SUPABASE_URL}/rest/v1/holdings?select=id,shares,avg_buy_price,thesis,updated_at,players(id,name,current_price,position,club,rating,nationality,photo_url)`,
         { headers: authHeaders() }
       );
       const data = await res.json();
@@ -1487,6 +1770,24 @@ function AppInner() {
       if (res.ok) setWatchlist(data);
     } catch (e) {
       // non-fatal
+    }
+  }
+
+  async function fetchJournalEntries() {
+    setJournalError('');
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/journal_entries?select=id,player_id,title,body,conviction,price_expectation,created_at,updated_at,players(id,name,current_price,position,club,rating,nationality,photo_url)&order=updated_at.desc`,
+        { headers: authHeaders() }
+      );
+      const data = await res.json();
+      if (res.ok) {
+        setJournalEntries(data);
+      } else {
+        setJournalError(data.message || 'Could not load your journal.');
+      }
+    } catch (e) {
+      setJournalError('Could not load your journal — check your connection and try again.');
     }
   }
 
@@ -1616,36 +1917,9 @@ function AppInner() {
     });
   }
 
-  // Real Scout Journal - a direct PATCH to holdings.thesis, which the
-  // RLS policy + lockdown trigger in scouta_schema_part3.sql allow
-  // (that column only; shares/avg_buy_price stay protected).
-  function handleEditThesis(holding) {
-    setNotebookDraft(holding.thesis || '');
-    setNotebookHolding(holding);
-  }
-
-  async function saveThesis() {
-    const holding = notebookHolding;
-    if (!holding) return;
-    setNotebookSaving(true);
-    try {
-      const res = await fetch(`${SUPABASE_URL}/rest/v1/holdings?id=eq.${holding.id}`, {
-        method: 'PATCH',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-        body: JSON.stringify({ thesis: notebookDraft }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        Alert.alert('Could not save', data.message || 'Something went wrong.');
-      } else {
-        setNotebookHolding(null);
-        await fetchHoldings();
-      }
-    } catch (e) {
-      Alert.alert('Error', e.message);
-    } finally {
-      setNotebookSaving(false);
-    }
+  function openPlayerJournal(player) {
+    setJournalPlayerFilter(player);
+    setJournalOpen(true);
   }
 
   async function fetchPlayers() {
@@ -3061,12 +3335,21 @@ function AppInner() {
                       </TouchableOpacity>
                     ),
                   })}
-                  <TouchableOpacity style={styles.journalRow} onPress={() => handleEditThesis(h)}>
-                    <Text style={styles.journalIcon}>📝</Text>
-                    <Text style={styles.journalText} numberOfLines={2}>
-                      {h.thesis || 'Add your thesis for this pick...'}
-                    </Text>
-                  </TouchableOpacity>
+                  {(() => {
+                    const latestEntry = journalEntries
+                      .filter((e) => e.player_id === h.players?.id)
+                      .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))[0];
+                    return (
+                      <TouchableOpacity style={styles.journalRow} onPress={() => openPlayerJournal(h.players)}>
+                        <Text style={styles.journalIcon}>📓</Text>
+                        <Text style={styles.journalText} numberOfLines={2}>
+                          {latestEntry
+                            ? (latestEntry.title || latestEntry.body || 'Untitled entry')
+                            : 'Start your scouting file on this pick...'}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })()}
                 </View>
               );
             })}
@@ -3163,6 +3446,18 @@ function AppInner() {
                 <Text style={styles.profStatLabel}>Total Trades</Text>
               </View>
             </View>
+            <TouchableOpacity
+              style={styles.profMenuRow}
+              onPress={() => { setJournalPlayerFilter(null); setJournalOpen(true); }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.profMenuRowTitle}>Scout Journal</Text>
+                <Text style={styles.profMenuRowSub}>
+                  {journalEntries.length === 0 ? 'No entries yet' : `${journalEntries.length} ${journalEntries.length === 1 ? 'entry' : 'entries'}`}
+                </Text>
+              </View>
+              <Text style={styles.profMenuRowChevron}>›</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={[styles.buttonOutline, { marginHorizontal: 20 }]} onPress={handleLogout}>
               <Text style={styles.buttonOutlineText}>Log out</Text>
             </TouchableOpacity>
@@ -3237,7 +3532,9 @@ function AppInner() {
         </Modal>
         <PromptModalRenderer />
         {BuyModalRenderer()}
-        {ScoutNotebookRenderer()}
+        {JournalRenderer()}
+        {JournalPickerRenderer()}
+        {JournalEditorRenderer()}
       </SafeAreaView>
     );
   }
@@ -3876,6 +4173,14 @@ const styles = StyleSheet.create({
   },
   profStatValue: { fontSize: 22, fontWeight: '800', color: '#161410', letterSpacing: -0.3 },
   profStatLabel: { fontSize: 12, color: '#918c81', fontWeight: '600', marginTop: 4 },
+  profMenuRow: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#ffffff',
+    borderRadius: 18, padding: 16, marginHorizontal: 20, marginBottom: 16,
+    shadowColor: '#161410', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.07, shadowRadius: 16, elevation: 3,
+  },
+  profMenuRowTitle: { fontSize: 15, fontWeight: '700', color: '#161410' },
+  profMenuRowSub: { fontSize: 12.5, color: '#918c81', marginTop: 2 },
+  profMenuRowChevron: { fontSize: 22, color: '#c4bdac', fontWeight: '300' },
   lbHeader: { paddingHorizontal: 22, marginTop: 12, marginBottom: 20 },
   lbTitle: { fontSize: 30, fontWeight: '800', color: '#161410', letterSpacing: -0.6, marginBottom: 4 },
   lbSub: { fontSize: 13, color: '#918c81', fontWeight: '500' },
@@ -3920,32 +4225,56 @@ const styles = StyleSheet.create({
   },
   journalIcon: { fontSize: 13, marginTop: 1 },
   journalText: { flex: 1, fontSize: 12.5, color: '#57534a', fontStyle: 'italic', lineHeight: 17 },
-  // Scout's Notebook: a dedicated full-screen editor. Same card, same
-  // hairline borders, same text colors as the rest of the app -- the
-  // serif headline and the generous blank writing space are what make
-  // it feel considered, not an added stationery theme.
-  notebookScreen: { flex: 1, backgroundColor: '#faf9f6' },
-  notebookTopBar: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4, alignItems: 'flex-end' },
-  notebookClose: { fontSize: 16, color: '#8a8578', padding: 6 },
-  notebookPage: {
-    flex: 1, backgroundColor: '#ffffff', marginHorizontal: 18, marginBottom: 14, borderRadius: 18,
-    borderWidth: 1, borderColor: '#e8e3d8', padding: 22,
+  // Scout Journal: editorial typography and generous whitespace on the
+  // app's own paper/ink palette, not a new theme -- minimal chrome (a
+  // plain text back/new/done, no boxed buttons) so the writing canvas
+  // itself stays the centrepiece.
+  journalScreen: { flex: 1, backgroundColor: '#faf9f6' },
+  journalTopBar: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: 20, paddingTop: 8, paddingBottom: 6,
   },
-  notebookHeader: { paddingBottom: 16, marginBottom: 16, borderBottomWidth: 1, borderBottomColor: '#e8e3d8' },
-  notebookHeaderTop: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-  notebookEyebrow: { fontSize: 11, fontWeight: '700', color: '#918c81', letterSpacing: 1 },
-  notebookPlayerName: { fontSize: 22, fontWeight: '700', color: '#161410', letterSpacing: -0.3 },
-  notebookPlayerSub: { fontSize: 13, color: '#8a8578', marginTop: 3 },
-  notebookRuledArea: { flex: 1 },
-  notebookInput: {
-    flex: 1, fontSize: 15.5, lineHeight: 24, color: '#161410',
-    borderWidth: 0, outlineStyle: 'none',
+  journalBack: { fontSize: 15, color: '#57534a', fontWeight: '500' },
+  journalNew: { fontSize: 15, color: '#161410', fontWeight: '700' },
+  journalDone: { fontSize: 15, color: '#161410', fontWeight: '700' },
+  journalHeaderBlock: { paddingHorizontal: 24, paddingTop: 10, paddingBottom: 20 },
+  journalEyebrow: { fontSize: 11, fontWeight: '700', color: '#918c81', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 6 },
+  journalTitle: { fontSize: 30, fontWeight: '700', color: '#161410', letterSpacing: -0.5 },
+  journalSubtitle: { fontSize: 14, color: '#8a8578', marginTop: 4 },
+  journalEmptyWrap: { paddingHorizontal: 24, paddingTop: 60, alignItems: 'center' },
+  journalEmptyText: { fontSize: 14.5, color: '#8a8578', textAlign: 'center', lineHeight: 22, marginBottom: 14 },
+  journalEmptyLink: { fontSize: 14.5, color: '#161410', fontWeight: '700', textDecorationLine: 'underline' },
+  journalEntryRow: { paddingHorizontal: 24, paddingTop: 16 },
+  journalEntryMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  journalEntryPlayer: { fontSize: 12.5, fontWeight: '700', color: '#161410', flexShrink: 1, marginRight: 8 },
+  journalEntryDate: { fontSize: 12, color: '#a8a29a' },
+  journalEntryTitle: { fontSize: 18, fontWeight: '700', color: '#161410', marginBottom: 4 },
+  journalEntryExcerpt: { fontSize: 13.5, color: '#79756a', lineHeight: 19 },
+  journalEntryDivider: { height: 1, backgroundColor: '#e8e3d8', marginTop: 16 },
+  journalEditorBody: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 60 },
+  journalEditorPlayerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 22 },
+  journalEditorPlayerPhoto: { width: 34, height: 34, borderRadius: 17, marginRight: 10, backgroundColor: '#e8e3d8' },
+  journalEditorPlayerPhotoFallback: {
+    width: 34, height: 34, borderRadius: 17, marginRight: 10, backgroundColor: '#e8e3d8',
+    alignItems: 'center', justifyContent: 'center',
   },
-  notebookFooter: { flexDirection: 'row', gap: 10, paddingHorizontal: 20, paddingBottom: 20 },
-  notebookSaveBtn: {
-    flex: 1, paddingVertical: 15, borderRadius: 14, alignItems: 'center', backgroundColor: '#161410',
+  journalEditorPlayerPhotoFallbackText: { fontSize: 14, fontWeight: '700', color: '#918c81' },
+  journalEditorPlayerName: { flex: 1, fontSize: 13.5, color: '#79756a', fontWeight: '500' },
+  journalTitleInput: { width: '100%', fontSize: 26, fontWeight: '700', color: '#161410', letterSpacing: -0.4, padding: 0, marginBottom: 16 },
+  journalMetaRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, gap: 8 },
+  journalConvictionRow: { flexDirection: 'row', gap: 14 },
+  journalConvictionWord: { fontSize: 13, fontWeight: '600', color: '#c4bdac', paddingBottom: 3 },
+  journalConvictionWordActive: { color: '#161410', borderBottomWidth: 2, borderBottomColor: '#161410' },
+  journalTargetRow: { flexDirection: 'row', alignItems: 'baseline' },
+  journalTargetLabel: { fontSize: 13, color: '#a8a29a', marginRight: 6 },
+  journalTargetInput: { fontSize: 13, fontWeight: '700', color: '#161410', padding: 0, minWidth: 30, textAlign: 'right', borderWidth: 0, outlineStyle: 'none' },
+  journalTargetSuffix: { fontSize: 13, color: '#a8a29a', marginLeft: 3 },
+  journalDivider: { height: 1, backgroundColor: '#e8e3d8', marginBottom: 22 },
+  journalBodyInput: {
+    fontSize: 16.5, lineHeight: 27, color: '#2b2620', minHeight: 360,
+    padding: 0, borderWidth: 0, outlineStyle: 'none',
   },
-  notebookSaveText: { fontSize: 14.5, fontWeight: '700', color: '#faf9f6' },
+  journalDeleteText: { fontSize: 13.5, color: '#c1483f', textAlign: 'center' },
   moversSplit: { flexDirection: 'row', gap: 14, paddingHorizontal: 22, marginBottom: 24 },
   moversColLabel: { fontSize: 10.5, fontWeight: '700', color: '#918c81', letterSpacing: 0.6, marginBottom: 8 },
   moverRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, gap: 6 },
