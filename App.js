@@ -171,6 +171,13 @@ function flagEmoji(code) {
   return cc.replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
 }
 
+function initialsFor(name) {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
 const CONVICTION_ORDER = ['low', 'medium', 'high'];
 const CONVICTION_LABELS = { low: 'Low', medium: 'Medium', high: 'High' };
 const HITSLOP = { top: 12, bottom: 12, left: 12, right: 12 };
@@ -1375,15 +1382,11 @@ function AppInner() {
               keyboardShouldPersistTaps="handled"
             >
               <View style={styles.journalEditorPlayerRow}>
-                {player.photo_url ? (
-                  <Image source={{ uri: player.photo_url }} style={styles.journalEditorPlayerPhoto} />
-                ) : (
-                  <View style={styles.journalEditorPlayerPhotoFallback}>
-                    <Text style={styles.journalEditorPlayerPhotoFallbackText}>
-                      {(player.name || '?').slice(0, 1)}
-                    </Text>
-                  </View>
-                )}
+                <View style={styles.journalEditorPlayerPhotoFallback}>
+                  <Text style={styles.journalEditorPlayerPhotoFallbackText}>
+                    {initialsFor(player.name)}
+                  </Text>
+                </View>
                 <Text style={styles.journalEditorPlayerName} numberOfLines={1}>
                   {player.name}
                   {[player.position, player.club].filter(Boolean).length ? '  ·  ' : ''}
@@ -4253,7 +4256,6 @@ const styles = StyleSheet.create({
   journalEntryDivider: { height: 1, backgroundColor: '#e8e3d8', marginTop: 16 },
   journalEditorBody: { paddingHorizontal: 24, paddingTop: 8, paddingBottom: 60 },
   journalEditorPlayerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 22 },
-  journalEditorPlayerPhoto: { width: 34, height: 34, borderRadius: 17, marginRight: 10, backgroundColor: '#e8e3d8' },
   journalEditorPlayerPhotoFallback: {
     width: 34, height: 34, borderRadius: 17, marginRight: 10, backgroundColor: '#e8e3d8',
     alignItems: 'center', justifyContent: 'center',
