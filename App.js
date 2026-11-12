@@ -2230,7 +2230,7 @@ function AppInner() {
                   No players match this filter right now.
                 </Text>
               ) : (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingLeft: 22, paddingRight: 8 }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingLeft: 22, paddingRight: 8, ...(Platform.OS === 'web' ? { willChange: 'transform' } : {}) }}>
                   {chipFiltered.slice(0, 6).map((item) => renderPlayerCard(item, {
                     showTopRow: true,
                     detail: `${item.position} · ${item.club} · ${item.age}`,
@@ -2266,7 +2266,7 @@ function AppInner() {
                     <Text style={styles.homeSectionTitle}>Hidden Gems</Text>
                     <Text style={styles.homeSectionSub}>Low price. High potential.</Text>
                   </View>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingLeft: 22, paddingRight: 8 }}>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingLeft: 22, paddingRight: 8, ...(Platform.OS === 'web' ? { willChange: 'transform' } : {}) }}>
                     {hiddenGems.map((item) => renderPlayerCard(item, {
                       showTopRow: true,
                       detail: `${item.position} · ${item.club} · ${item.age}`,
@@ -3682,7 +3682,14 @@ const styles = StyleSheet.create({
   natBadgeText: { fontSize: 10, fontWeight: '700', color: '#c7c2b6', letterSpacing: 0.5 },
   flagEmoji: { fontSize: 15, marginLeft: 8 },
   cardTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
-  ratingBadge: { alignItems: 'flex-end' },
+  // minWidth/minHeight reserve the badge's box immediately instead of
+  // collapsing to zero until its text has been measured and painted --
+  // confirmed live (screen recording, 2026-11-12) that on mobile Safari,
+  // a card scrolling into view in a horizontal row can show its gold
+  // chip icon (cheap to rasterize) a beat before this right-aligned
+  // text badge paints at all, reading as the top of the card going
+  // blank. Reserving the space keeps the layout stable either way.
+  ratingBadge: { alignItems: 'flex-end', minWidth: 50, minHeight: 34, justifyContent: 'center' },
   ratingNumber: { fontSize: 20, fontWeight: '800', color: '#c9a227', lineHeight: 22 },
   ratingLabel: { fontSize: 9, fontWeight: '700', color: '#918c81', letterSpacing: 1 },
   cardFooter: { fontSize: 9.5, color: '#57534a', marginTop: 8, letterSpacing: 0.5 },
