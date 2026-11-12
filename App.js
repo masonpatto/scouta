@@ -1086,6 +1086,18 @@ function AppInner() {
     );
   }
 
+  // Called directly as {BuyModalRenderer()} at its one call site below,
+  // never as a JSX <BuyModalRenderer /> tag. It's redefined every time
+  // this outer component re-renders (it's a plain nested function, not
+  // a hook of its own), so using it as a JSX element type would give
+  // React a "new component" each render -- forcing a full unmount/
+  // remount of everything inside it, including SheetEntrance, on every
+  // keystroke or chip tap. Confirmed live as the cause of the sheet
+  // replaying its slide-up animation on every amount change and
+  // glitching when the success view swapped in. A plain function call
+  // just inlines this JSX into the parent's render instead, so
+  // SheetEntrance (a real, stable component) keeps its own identity
+  // and mounts exactly once per time the sheet opens.
   function BuyModalRenderer() {
     if (!buyModalPlayer) return null;
     const player = buyModalPlayer;
@@ -3134,7 +3146,7 @@ function AppInner() {
           </View>
         </Modal>
         <PromptModalRenderer />
-        <BuyModalRenderer />
+        {BuyModalRenderer()}
       </SafeAreaView>
     );
   }
