@@ -457,6 +457,141 @@ function AnimatedShine() {
   );
 }
 
+// A buy-amount chip (preset or "All In") that gives a quick tactile
+// squash-and-spring on press, instead of the flat TouchableOpacity
+// feedback the rest of the chip row used to have. Its own component
+// so the Animated.Value is scoped to one chip, not shared/reset by
+// re-renders of the modal around it.
+function BuyChip({ label, active, disabled, style, onPress }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const press = () => {
+    Animated.sequence([
+      Animated.timing(scale, { toValue: 0.88, duration: 70, useNativeDriver: true }),
+      Animated.spring(scale, { toValue: 1, friction: 4, tension: 120, useNativeDriver: true }),
+    ]).start();
+    onPress();
+  };
+  return (
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <TouchableOpacity
+        style={[styles.buyChip, style, active && styles.buyChipActive, disabled && styles.buyChipDisabled]}
+        onPress={press}
+        disabled={disabled}
+      >
+        <Text style={[styles.buyChipText, active && styles.buyChipTextActive]}>{label}</Text>
+      </TouchableOpacity>
+    </Animated.View>
+  );
+}
+
+// Gives the buy modal's card a quick spring-in on open instead of
+// just appearing with the backdrop fade -- the backdrop's own fade
+// (via Modal's animationType) still handles the dimming, this only
+// animates the card itself.
+function CardEntrance({ children }) {
+  const scaleAnim = useRef(new Animated.Value(0.92)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(scaleAnim, { toValue: 1, friction: 7, tension: 70, useNativeDriver: true }),
+      Animated.timing(opacityAnim, { toValue: 1, duration: 180, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  return (
+    <Animated.View style={{ opacity: opacityAnim, transform: [{ scale: scaleAnim }] }}>
+      {children}
+    </Animated.View>
+  );
+}
+
+// The celebration screen shown in place of the buy form once a
+// purchase succeeds -- replaces a plain Alert.alert (which barely
+// renders on web) with an in-card moment: a spring-in badge, a
+// looping shine sweep reusing the same material as the player cards
+// for visual continuity, and the shares/SC counting up from zero
+// rather than just appearing, so the number itself feels earned.
+function BuySuccessView({ info, onDone, onViewPortfolio }) {
+  const scaleAnim = useRef(new Animated.Value(0.7)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const sweep = useRef(new Animated.Value(0)).current;
+  const [displayShares, setDisplayShares] = useState(0);
+  const [displayAmount, setDisplayAmount] = useState(0);
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(scaleAnim, { toValue: 1, friction: 6, tension: 80, useNativeDriver: true }),
+      Animated.timing(opacityAnim, { toValue: 1, duration: 220, useNativeDriver: true }),
+    ]).start();
+
+    const sweepLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(sweep, { toValue: 1, duration: 1400, useNativeDriver: true }),
+        Animated.delay(900),
+      ])
+    );
+    sweepLoop.start();
+
+    // Eased count-up (ease-out cubic) rather than a linear tick --
+    // starts fast and settles into the final number instead of
+    // feeling mechanical.
+    const duration = 700;
+    const start = Date.now();
+    let raf;
+    const tick = () => {
+      const t = Math.min(1, (Date.now() - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setDisplayShares(info.shares * eased);
+      setDisplayAmount(info.amount * eased);
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+
+    return () => {
+      sweepLoop.stop();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  const sweepTranslate = sweep.interpolate({ inputRange: [0, 1], outputRange: [-120, 220] });
+
+  return (
+    <Animated.View style={{ opacity: opacityAnim, transform: [{ scale: scaleAnim }] }}>
+      <View style={styles.buySuccessBadgeWrap}>
+        <View style={styles.buySuccessBadge}>
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.shine, { transform: [{ translateX: sweepTranslate }, { rotate: '20deg' }] }]}
+          />
+          <Text style={styles.buySuccessCheck}>✓</Text>
+        </View>
+      </View>
+      <Text style={styles.buySuccessTitle}>Added to your portfolio</Text>
+      <Text style={styles.buySuccessPlayer}>{info.playerName}</Text>
+      <View style={styles.buySuccessStatsRow}>
+        <View style={styles.buySuccessStat}>
+          <Text style={styles.buySuccessStatValue}>{displayShares.toFixed(2)}</Text>
+          <Text style={styles.buySuccessStatLabel}>SHARES</Text>
+        </View>
+        <View style={styles.buySuccessStatDivider} />
+        <View style={styles.buySuccessStat}>
+          <Text style={styles.buySuccessStatValue}>{Math.round(displayAmount)}</Text>
+          <Text style={styles.buySuccessStatLabel}>SC INVESTED</Text>
+        </View>
+      </View>
+      <View style={styles.promptButtonRow}>
+        <TouchableOpacity style={styles.promptCancelBtn} onPress={onDone}>
+          <Text style={styles.promptCancelText}>Done</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.promptSubmitBtn} onPress={onViewPortfolio}>
+          <Text style={styles.promptSubmitText}>View Portfolio</Text>
+        </TouchableOpacity>
+      </View>
+    </Animated.View>
+  );
+}
+
 // ---------- Web-only presentation: a centred "app card" on wide browser
 // windows, instead of the phone layout stretching edge-to-edge. A no-op
 // on native -- WebFrame renders children untouched there.
@@ -889,6 +1024,7 @@ function AppInner() {
   // a bare text field.
   const [buyModalPlayer, setBuyModalPlayer] = useState(null);
   const [buyAmount, setBuyAmount] = useState('');
+  const [buySuccessInfo, setBuySuccessInfo] = useState(null);
 
   // Rendered at every screen that can call showPrompt (standalone login,
   // the logged-in app) -- a plain Modal works identically on every
@@ -943,97 +1079,102 @@ function AppInner() {
     const maxCash = Math.floor((cash || 0) * 100) / 100;
     const canSubmit = amountNum > 0 && !actionBusy;
 
+    function closeModal() {
+      setBuyModalPlayer(null);
+      setBuySuccessInfo(null);
+    }
+
     return (
-      <Modal visible transparent animationType="fade" onRequestClose={() => setBuyModalPlayer(null)}>
+      <Modal visible transparent animationType="fade" onRequestClose={closeModal}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.promptBackdrop}
         >
-          <View style={styles.buyCard}>
-            <View style={styles.buyCardHeader}>
-              <ChipIcon />
-              <View style={styles.ratingBadge}>
-                <Text style={[styles.ratingNumber, { color: player.rating ? tier.accent : tier.dim }]}>
-                  {player.rating || '—'}
-                </Text>
-                <Text style={[styles.ratingLabel, { color: tier.dim }]}>RATING</Text>
-              </View>
-            </View>
-            <Text style={styles.buyPlayerName}>{player.name}</Text>
-            <Text style={styles.buyPlayerSub}>{[player.position, player.club].filter(Boolean).join(' · ')}</Text>
-            <View style={styles.buyPriceRow}>
-              <Text style={styles.buyPriceMain}>
-                {player.current_price != null ? Math.round(player.current_price).toLocaleString('en-US') : '—'}
-              </Text>
-              <Text style={styles.buyPriceSuffix}> SC / share</Text>
-            </View>
+          <CardEntrance>
+            <View style={styles.buyCard}>
+              {buySuccessInfo ? (
+                <BuySuccessView
+                  info={buySuccessInfo}
+                  onDone={closeModal}
+                  onViewPortfolio={() => { closeModal(); setCurrentTab('portfolio'); }}
+                />
+              ) : (
+                <>
+                  <View style={styles.buyCardHeader}>
+                    <ChipIcon />
+                    <View style={styles.ratingBadge}>
+                      <Text style={[styles.ratingNumber, { color: player.rating ? tier.accent : tier.dim }]}>
+                        {player.rating || '—'}
+                      </Text>
+                      <Text style={[styles.ratingLabel, { color: tier.dim }]}>RATING</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.buyPlayerName}>{player.name}</Text>
+                  <Text style={styles.buyPlayerSub}>{[player.position, player.club].filter(Boolean).join(' · ')}</Text>
+                  <View style={styles.buyPriceRow}>
+                    <Text style={styles.buyPriceMain}>
+                      {player.current_price != null ? Math.round(player.current_price).toLocaleString('en-US') : '—'}
+                    </Text>
+                    <Text style={styles.buyPriceSuffix}> SC / share</Text>
+                  </View>
 
-            <Text style={styles.buyAmountLabel}>Invest</Text>
-            <View style={styles.buyChipsRow}>
-              {BUY_AMOUNT_PRESETS.map((v) => {
-                const disabled = v > maxCash;
-                const active = amountNum === v;
-                return (
-                  <TouchableOpacity
-                    key={v}
-                    style={[styles.buyChip, active && styles.buyChipActive, disabled && styles.buyChipDisabled]}
-                    onPress={() => setBuyAmount(String(v))}
-                    disabled={disabled}
-                  >
-                    <Text style={[styles.buyChipText, active && styles.buyChipTextActive]}>{v}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-              <TouchableOpacity
-                style={[
-                  styles.buyChip,
-                  styles.buyChipMax,
-                  amountNum > 0 && amountNum === maxCash && styles.buyChipActive,
-                  maxCash < 5 && styles.buyChipDisabled,
-                ]}
-                onPress={() => setBuyAmount(String(maxCash))}
-                disabled={maxCash < 5}
-              >
-                <Text style={[styles.buyChipText, amountNum > 0 && amountNum === maxCash && styles.buyChipTextActive]}>
-                  All In
-                </Text>
-              </TouchableOpacity>
+                  <Text style={styles.buyAmountLabel}>Invest</Text>
+                  <View style={styles.buyChipsRow}>
+                    {BUY_AMOUNT_PRESETS.map((v) => (
+                      <BuyChip
+                        key={v}
+                        label={v}
+                        active={amountNum === v}
+                        disabled={v > maxCash}
+                        onPress={() => setBuyAmount(String(v))}
+                      />
+                    ))}
+                    <BuyChip
+                      label="All In"
+                      style={styles.buyChipMax}
+                      active={amountNum > 0 && amountNum === maxCash}
+                      disabled={maxCash < 5}
+                      onPress={() => setBuyAmount(String(maxCash))}
+                    />
+                  </View>
+
+                  <View style={styles.buyCustomInputWrap}>
+                    <TextInput
+                      style={styles.buyCustomInput}
+                      value={buyAmount}
+                      onChangeText={setBuyAmount}
+                      keyboardType="numeric"
+                      placeholder="Custom amount"
+                      placeholderTextColor="#b4ad9c"
+                    />
+                    <Text style={styles.buyCustomInputSuffix}>SC</Text>
+                  </View>
+
+                  {amountNum > 0 ? (
+                    <View style={styles.buyPreviewRow}>
+                      <Text style={styles.buyPreviewText}>≈ {sharesPreview.toFixed(2)} shares</Text>
+                      <Text style={styles.buyPreviewText}>Fee {fee.toFixed(2)} SC</Text>
+                    </View>
+                  ) : null}
+
+                  <Text style={styles.buyAvailableText}>Available: {formatSC(cash || 0, 2)}</Text>
+
+                  <View style={styles.promptButtonRow}>
+                    <TouchableOpacity style={styles.promptCancelBtn} onPress={closeModal}>
+                      <Text style={styles.promptCancelText}>Cancel</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.promptSubmitBtn, !canSubmit && styles.heroButtonDisabled]}
+                      onPress={() => submitBuy()}
+                      disabled={!canSubmit}
+                    >
+                      <Text style={styles.promptSubmitText}>{actionBusy ? 'Investing…' : 'Invest'}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
             </View>
-
-            <View style={styles.buyCustomInputWrap}>
-              <TextInput
-                style={styles.buyCustomInput}
-                value={buyAmount}
-                onChangeText={setBuyAmount}
-                keyboardType="numeric"
-                placeholder="Custom amount"
-                placeholderTextColor="#b4ad9c"
-              />
-              <Text style={styles.buyCustomInputSuffix}>SC</Text>
-            </View>
-
-            {amountNum > 0 ? (
-              <View style={styles.buyPreviewRow}>
-                <Text style={styles.buyPreviewText}>≈ {sharesPreview.toFixed(2)} shares</Text>
-                <Text style={styles.buyPreviewText}>Fee {fee.toFixed(2)} SC</Text>
-              </View>
-            ) : null}
-
-            <Text style={styles.buyAvailableText}>Available: {formatSC(cash || 0, 2)}</Text>
-
-            <View style={styles.promptButtonRow}>
-              <TouchableOpacity style={styles.promptCancelBtn} onPress={() => setBuyModalPlayer(null)}>
-                <Text style={styles.promptCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.promptSubmitBtn, !canSubmit && styles.heroButtonDisabled]}
-                onPress={() => submitBuy()}
-                disabled={!canSubmit}
-              >
-                <Text style={styles.promptSubmitText}>{actionBusy ? 'Investing…' : 'Invest'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          </CardEntrance>
         </KeyboardAvoidingView>
       </Modal>
     );
@@ -1299,6 +1440,7 @@ function AppInner() {
 
   function handleBuy(player) {
     setBuyAmount('');
+    setBuySuccessInfo(null);
     setBuyModalPlayer(player);
   }
 
@@ -1313,8 +1455,9 @@ function AppInner() {
       if (!result.ok) {
         Alert.alert('Could not buy', result.reason);
       } else {
-        setBuyModalPlayer(null);
-        Alert.alert('Bought', `Invested ${amount} SC in ${player.name}.`);
+        const fee = Math.round(amount * 0.02 * 100) / 100;
+        const shares = player.current_price > 0 ? Math.max(0, amount - fee) / player.current_price : 0;
+        setBuySuccessInfo({ playerName: player.name, amount, shares });
         logEvent('buy_player', { player_id: player.id, amount });
         await Promise.all([fetchCash(), fetchHoldings(), fetchTransactions()]);
       }
@@ -3087,6 +3230,32 @@ const styles = StyleSheet.create({
   buyPreviewRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
   buyPreviewText: { fontSize: 12.5, color: '#57534a' },
   buyAvailableText: { fontSize: 12, color: '#918c81', marginBottom: 16 },
+  buySuccessBadgeWrap: { alignItems: 'center', marginTop: 4, marginBottom: 18 },
+  buySuccessBadge: {
+    width: 72, height: 72, borderRadius: 36, backgroundColor: '#161410',
+    alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+    shadowColor: '#141208', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.25, shadowRadius: 20, elevation: 6,
+  },
+  buySuccessCheck: { fontSize: 32, fontWeight: '800', color: '#eec98a' },
+  buySuccessTitle: {
+    fontSize: 13, fontWeight: '700', color: '#918c81', textAlign: 'center',
+    textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4,
+  },
+  buySuccessPlayer: {
+    fontSize: 21, fontWeight: '800', color: '#161410', textAlign: 'center',
+    letterSpacing: -0.3, marginBottom: 20,
+  },
+  buySuccessStatsRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 24, marginBottom: 24,
+  },
+  buySuccessStat: { alignItems: 'center' },
+  buySuccessStatDivider: { width: 1, height: 34, backgroundColor: '#e8e3d8' },
+  buySuccessStatValue: {
+    fontSize: 22, fontWeight: '800', color: '#161410', letterSpacing: -0.3,
+    fontVariant: ['tabular-nums'],
+  },
+  buySuccessStatLabel: { fontSize: 10, fontWeight: '700', color: '#918c81', letterSpacing: 1, marginTop: 2 },
   notifRow: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
     paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee9dd',
