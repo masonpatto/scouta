@@ -492,6 +492,50 @@ function BuyChip({ label, active, disabled, style, onPress }) {
   );
 }
 
+// A deliberate press-and-hold to confirm, rather than a single tap --
+// the same "hold to pay" pattern real fintech apps (Apple Pay, Revolut,
+// Monzo) use for the one action that actually moves money, so a
+// mis-tap can't trigger a real purchase and the moment of committing
+// gets its own bit of weight. Releasing early cancels and the fill
+// eases back to empty.
+const HOLD_TO_CONFIRM_MS = 650;
+function HoldToConfirmButton({ label, holdingLabel, disabled, onConfirm }) {
+  const progress = useRef(new Animated.Value(0)).current;
+  const [holding, setHolding] = useState(false);
+  const animRef = useRef(null);
+
+  function start() {
+    if (disabled) return;
+    setHolding(true);
+    animRef.current = Animated.timing(progress, {
+      toValue: 1, duration: HOLD_TO_CONFIRM_MS, useNativeDriver: false,
+    });
+    animRef.current.start(({ finished }) => {
+      if (finished) onConfirm();
+    });
+  }
+  function cancel() {
+    setHolding(false);
+    if (animRef.current) animRef.current.stop();
+    Animated.timing(progress, { toValue: 0, duration: 220, useNativeDriver: false }).start();
+  }
+
+  const fillWidth = progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] });
+
+  return (
+    <TouchableOpacity
+      activeOpacity={1}
+      disabled={disabled}
+      onPressIn={start}
+      onPressOut={cancel}
+      style={[styles.buySheetSubmitBtn, disabled && styles.heroButtonDisabled]}
+    >
+      <Animated.View pointerEvents="none" style={[styles.holdFill, { width: fillWidth }]} />
+      <Text style={styles.buySheetSubmitText}>{holding ? holdingLabel : label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 // Slides the buy sheet up from the bottom edge rather than fading in
 // as a centred dialog -- reads as a native bottom sheet, which is the
 // more familiar "exciting trade" pattern (Robinhood/Coinbase-style)
@@ -598,11 +642,11 @@ function BuySuccessView({ info, onDone, onViewPortfolio }) {
         </View>
       </View>
       <View style={styles.promptButtonRow}>
-        <PressScale viewStyle={{ flex: 1 }} style={styles.promptCancelBtn} onPress={onDone}>
-          <Text style={styles.promptCancelText}>Done</Text>
+        <PressScale viewStyle={{ flex: 1 }} style={styles.buySheetCancelBtn} onPress={onDone}>
+          <Text style={styles.buySheetCancelText}>Done</Text>
         </PressScale>
-        <PressScale viewStyle={{ flex: 1 }} style={styles.promptSubmitBtn} onPress={onViewPortfolio}>
-          <Text style={styles.promptSubmitText}>View Portfolio</Text>
+        <PressScale viewStyle={{ flex: 1 }} style={styles.buySheetSubmitBtn} onPress={onViewPortfolio}>
+          <Text style={styles.buySheetSubmitText}>View Portfolio</Text>
         </PressScale>
       </View>
     </Animated.View>
@@ -1160,7 +1204,7 @@ function AppInner() {
                       onChangeText={setBuyAmount}
                       keyboardType="numeric"
                       placeholder="Custom amount"
-                      placeholderTextColor="#b4ad9c"
+                      placeholderTextColor="rgba(245,242,236,0.35)"
                     />
                     <Text style={styles.buyCustomInputSuffix}>SC</Text>
                   </View>
@@ -1175,17 +1219,17 @@ function AppInner() {
                   <Text style={styles.buyAvailableText}>Available: {formatSC(cash || 0, 2)}</Text>
 
                   <View style={styles.promptButtonRow}>
-                    <PressScale viewStyle={{ flex: 1 }} style={styles.promptCancelBtn} onPress={closeModal}>
-                      <Text style={styles.promptCancelText}>Cancel</Text>
+                    <PressScale viewStyle={{ flex: 1 }} style={styles.buySheetCancelBtn} onPress={closeModal}>
+                      <Text style={styles.buySheetCancelText}>Cancel</Text>
                     </PressScale>
-                    <PressScale
-                      viewStyle={{ flex: 1 }}
-                      style={[styles.promptSubmitBtn, !canSubmit && styles.heroButtonDisabled]}
-                      onPress={() => submitBuy()}
-                      disabled={!canSubmit}
-                    >
-                      <Text style={styles.promptSubmitText}>{actionBusy ? 'Investing…' : 'Invest'}</Text>
-                    </PressScale>
+                    <View style={{ flex: 1 }}>
+                      <HoldToConfirmButton
+                        label={actionBusy ? 'Investing…' : 'Hold to Invest'}
+                        holdingLabel="Keep holding…"
+                        disabled={!canSubmit}
+                        onConfirm={() => submitBuy()}
+                      />
+                    </View>
                   </View>
                 </>
               )}
@@ -3221,71 +3265,88 @@ const styles = StyleSheet.create({
   // Bottom sheet, not a centred dialog -- pinned to the screen's
   // bottom edge via buySheetBackdrop's justifyContent, rounded only
   // on top so it reads as a native sheet rather than a floating card.
+  // Dark, gold-accented sheet -- reuses the exact palette the player
+  // cards already use (elite tier: #161518 card / #f5f2ec text /
+  // rgba(245,242,236,0.5) dim / #e2c47c gold) instead of the plain
+  // cream form this sheet used before. A purchase is the one moment
+  // in the app that should feel like the trading-card material itself,
+  // not a settings form.
   buySheetBackdrop: {
-    flex: 1, backgroundColor: 'rgba(22,20,16,0.45)', justifyContent: 'flex-end',
+    flex: 1, backgroundColor: 'rgba(10,9,7,0.6)', justifyContent: 'flex-end',
   },
   buyCard: {
-    backgroundColor: '#faf9f6', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    backgroundColor: '#161518', borderTopLeftRadius: 28, borderTopRightRadius: 28,
     paddingTop: 10, paddingHorizontal: 22, paddingBottom: 30,
   },
   buySheetHandle: {
-    width: 36, height: 4, borderRadius: 2, backgroundColor: '#e8e3d8',
+    width: 36, height: 4, borderRadius: 2, backgroundColor: 'rgba(245,242,236,0.25)',
     alignSelf: 'center', marginBottom: 16,
   },
   buyCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 },
-  // The card's own ratingNumber/ratingLabel colors are tuned to sit on
-  // a dark tier-gradient background -- on this light sheet they read
-  // washed out, so the buy sheet gets its own: gold for the number
-  // (the app's one consistent "this number matters" accent, also used
-  // on the success checkmark) and the same muted grey as every other
-  // label in this sheet.
-  buyRatingNumber: { fontSize: 20, fontWeight: '800', color: '#c9a227', lineHeight: 22 },
-  buyRatingLabel: { fontSize: 9, fontWeight: '700', color: '#918c81', letterSpacing: 1 },
-  buyPlayerName: { fontSize: 20, fontWeight: '800', color: '#161410', letterSpacing: -0.3 },
-  buyPlayerSub: { fontSize: 13, color: '#8a8578', marginTop: 2, marginBottom: 10 },
+  buyRatingNumber: { fontSize: 20, fontWeight: '800', color: '#e2c47c', lineHeight: 22 },
+  buyRatingLabel: { fontSize: 9, fontWeight: '700', color: 'rgba(245,242,236,0.45)', letterSpacing: 1 },
+  buyPlayerName: { fontSize: 20, fontWeight: '800', color: '#f5f2ec', letterSpacing: -0.3 },
+  buyPlayerSub: { fontSize: 13, color: 'rgba(245,242,236,0.55)', marginTop: 2, marginBottom: 10 },
   buyPriceRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 18 },
-  buyPriceMain: { fontSize: 22, fontWeight: '800', color: '#161410' },
-  buyPriceSuffix: { fontSize: 13, fontWeight: '600', color: '#8a8578' },
-  buyAmountLabel: { fontSize: 12, fontWeight: '700', color: '#918c81', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
+  buyPriceMain: { fontSize: 22, fontWeight: '800', color: '#f5f2ec', fontVariant: ['tabular-nums'] },
+  buyPriceSuffix: { fontSize: 13, fontWeight: '600', color: 'rgba(245,242,236,0.5)' },
+  buyAmountLabel: { fontSize: 12, fontWeight: '700', color: 'rgba(245,242,236,0.5)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
   buyChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   buyChip: {
     paddingVertical: 10, paddingHorizontal: 16, borderRadius: 14,
-    backgroundColor: '#ffffff', borderWidth: 1.5, borderColor: '#e8e3d8',
+    backgroundColor: 'rgba(245,242,236,0.06)', borderWidth: 1.5, borderColor: 'rgba(245,242,236,0.14)',
   },
-  // Gold border + gold text on selection, not a flat black/white
-  // invert -- ties the selected state to the same accent used
-  // everywhere else a number matters (ratings, the success check),
-  // instead of a generic "active pill" treatment.
-  buyChipActive: { backgroundColor: '#161410', borderColor: '#eec98a' },
+  // Filled gold on selection, dark text -- reads like a metal card's
+  // accent rather than a generic "active pill" invert.
+  buyChipActive: { backgroundColor: '#e2c47c', borderColor: '#e2c47c' },
   buyChipDisabled: { opacity: 0.35 },
-  buyChipMax: { backgroundColor: '#f1dfd4', borderColor: '#e2c47c' },
-  buyChipText: { fontSize: 14, fontWeight: '700', color: '#161410' },
-  buyChipTextActive: { color: '#eec98a' },
+  buyChipMax: { backgroundColor: 'rgba(226,196,124,0.12)', borderColor: 'rgba(226,196,124,0.4)' },
+  buyChipText: { fontSize: 14, fontWeight: '700', color: '#f5f2ec' },
+  buyChipTextActive: { color: '#161410' },
   buyCustomInputWrap: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: '#ffffff',
-    borderWidth: 1.5, borderColor: '#e8e3d8', borderRadius: 14,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(245,242,236,0.06)',
+    borderWidth: 1.5, borderColor: 'rgba(245,242,236,0.14)', borderRadius: 14,
     paddingHorizontal: 16, marginBottom: 12,
   },
-  buyCustomInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: '#161410' },
-  buyCustomInputSuffix: { fontSize: 13, fontWeight: '700', color: '#918c81' },
+  buyCustomInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: '#f5f2ec' },
+  buyCustomInputSuffix: { fontSize: 13, fontWeight: '700', color: 'rgba(245,242,236,0.5)' },
   buyPreviewRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
-  buyPreviewText: { fontSize: 12.5, color: '#57534a' },
-  buyAvailableText: { fontSize: 12, color: '#918c81', marginBottom: 16 },
+  buyPreviewText: { fontSize: 12.5, color: 'rgba(245,242,236,0.55)' },
+  buyAvailableText: { fontSize: 12, color: 'rgba(245,242,236,0.45)', marginBottom: 16 },
+  // Buy-sheet-specific button styles -- NOT the shared promptCancelBtn/
+  // promptSubmitBtn (those stay light-themed for the generic showPrompt
+  // modal used elsewhere, e.g. Sell).
+  buySheetCancelBtn: {
+    flex: 1, paddingVertical: 15, borderRadius: 14, alignItems: 'center',
+    backgroundColor: 'rgba(245,242,236,0.06)', borderWidth: 1.5, borderColor: 'rgba(245,242,236,0.14)',
+  },
+  buySheetCancelText: { fontSize: 14.5, fontWeight: '700', color: '#f5f2ec' },
+  buySheetSubmitBtn: {
+    flex: 1, paddingVertical: 15, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#e2c47c', overflow: 'hidden',
+  },
+  buySheetSubmitText: { fontSize: 14.5, fontWeight: '700', color: '#161410' },
+  // The hold-to-confirm fill -- a darker sweep that fills left-to-right
+  // behind the label as the button is held, clipped by the button's
+  // own overflow: hidden and rounded corners.
+  holdFill: {
+    position: 'absolute', top: 0, bottom: 0, left: 0, backgroundColor: 'rgba(22,20,16,0.22)',
+  },
   buySuccessBadgeWrap: { alignItems: 'center', marginTop: 4, marginBottom: 18 },
   buySuccessBadge: {
-    width: 72, height: 72, borderRadius: 36, backgroundColor: '#161410',
+    width: 72, height: 72, borderRadius: 36, backgroundColor: '#0e0d0b',
     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
     // Gold-tinted glow rather than a plain drop shadow -- reads as the
     // badge itself giving off light, not just sitting above the sheet.
-    shadowColor: '#c9a227', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.5, shadowRadius: 26, elevation: 6,
+    shadowColor: '#e2c47c', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.55, shadowRadius: 26, elevation: 6,
   },
-  buySuccessCheck: { fontSize: 32, fontWeight: '800', color: '#eec98a' },
+  buySuccessCheck: { fontSize: 32, fontWeight: '800', color: '#e2c47c' },
   buySuccessTitle: {
-    fontSize: 13, fontWeight: '700', color: '#918c81', textAlign: 'center',
+    fontSize: 13, fontWeight: '700', color: 'rgba(245,242,236,0.5)', textAlign: 'center',
     textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4,
   },
   buySuccessPlayer: {
-    fontSize: 21, fontWeight: '800', color: '#161410', textAlign: 'center',
+    fontSize: 21, fontWeight: '800', color: '#f5f2ec', textAlign: 'center',
     letterSpacing: -0.3, marginBottom: 20,
   },
   buySuccessStatsRow: {
@@ -3293,12 +3354,12 @@ const styles = StyleSheet.create({
     gap: 24, marginBottom: 24,
   },
   buySuccessStat: { alignItems: 'center' },
-  buySuccessStatDivider: { width: 1, height: 34, backgroundColor: '#e8e3d8' },
+  buySuccessStatDivider: { width: 1, height: 34, backgroundColor: 'rgba(245,242,236,0.14)' },
   buySuccessStatValue: {
-    fontSize: 22, fontWeight: '800', color: '#161410', letterSpacing: -0.3,
+    fontSize: 22, fontWeight: '800', color: '#f5f2ec', letterSpacing: -0.3,
     fontVariant: ['tabular-nums'],
   },
-  buySuccessStatLabel: { fontSize: 10, fontWeight: '700', color: '#918c81', letterSpacing: 1, marginTop: 2 },
+  buySuccessStatLabel: { fontSize: 10, fontWeight: '700', color: 'rgba(245,242,236,0.5)', letterSpacing: 1, marginTop: 2 },
   notifRow: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
     paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee9dd',
