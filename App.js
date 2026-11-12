@@ -457,50 +457,58 @@ function AnimatedShine() {
   );
 }
 
-// A buy-amount chip (preset or "All In") that gives a quick tactile
-// squash-and-spring on press, instead of the flat TouchableOpacity
-// feedback the rest of the chip row used to have. Its own component
-// so the Animated.Value is scoped to one chip, not shared/reset by
-// re-renders of the modal around it.
-function BuyChip({ label, active, disabled, style, onPress }) {
+// A quick tactile squash-and-spring on press for any button, instead
+// of TouchableOpacity's flat opacity-only feedback. Generic wrapper so
+// every button in the buy sheet (chips, Cancel/Invest, Done/View
+// Portfolio) shares the same feel rather than only the chips having it.
+function PressScale({ onPress, disabled, style, textStyle, children, viewStyle }) {
   const scale = useRef(new Animated.Value(1)).current;
   const press = () => {
     Animated.sequence([
-      Animated.timing(scale, { toValue: 0.88, duration: 70, useNativeDriver: true }),
+      Animated.timing(scale, { toValue: 0.92, duration: 70, useNativeDriver: true }),
       Animated.spring(scale, { toValue: 1, friction: 4, tension: 120, useNativeDriver: true }),
     ]).start();
     onPress();
   };
   return (
-    <Animated.View style={{ transform: [{ scale }] }}>
-      <TouchableOpacity
-        style={[styles.buyChip, style, active && styles.buyChipActive, disabled && styles.buyChipDisabled]}
-        onPress={press}
-        disabled={disabled}
-      >
-        <Text style={[styles.buyChipText, active && styles.buyChipTextActive]}>{label}</Text>
+    <Animated.View style={[viewStyle, { transform: [{ scale }] }]}>
+      <TouchableOpacity style={style} onPress={press} disabled={disabled}>
+        {children}
       </TouchableOpacity>
     </Animated.View>
   );
 }
 
-// Gives the buy modal's card a quick spring-in on open instead of
-// just appearing with the backdrop fade -- the backdrop's own fade
-// (via Modal's animationType) still handles the dimming, this only
-// animates the card itself.
-function CardEntrance({ children }) {
-  const scaleAnim = useRef(new Animated.Value(0.92)).current;
+// A buy-amount chip (preset or "All In"), built on PressScale.
+function BuyChip({ label, active, disabled, style, onPress }) {
+  return (
+    <PressScale
+      onPress={onPress}
+      disabled={disabled}
+      style={[styles.buyChip, style, active && styles.buyChipActive, disabled && styles.buyChipDisabled]}
+    >
+      <Text style={[styles.buyChipText, active && styles.buyChipTextActive]}>{label}</Text>
+    </PressScale>
+  );
+}
+
+// Slides the buy sheet up from the bottom edge rather than fading in
+// as a centred dialog -- reads as a native bottom sheet, which is the
+// more familiar "exciting trade" pattern (Robinhood/Coinbase-style)
+// than a plain alert-shaped box.
+function SheetEntrance({ children }) {
+  const translateAnim = useRef(new Animated.Value(60)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.spring(scaleAnim, { toValue: 1, friction: 7, tension: 70, useNativeDriver: true }),
-      Animated.timing(opacityAnim, { toValue: 1, duration: 180, useNativeDriver: true }),
+      Animated.spring(translateAnim, { toValue: 0, friction: 9, tension: 70, useNativeDriver: true }),
+      Animated.timing(opacityAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
     ]).start();
   }, []);
 
   return (
-    <Animated.View style={{ opacity: opacityAnim, transform: [{ scale: scaleAnim }] }}>
+    <Animated.View style={{ opacity: opacityAnim, transform: [{ translateY: translateAnim }] }}>
       {children}
     </Animated.View>
   );
@@ -516,14 +524,23 @@ function BuySuccessView({ info, onDone, onViewPortfolio }) {
   const scaleAnim = useRef(new Animated.Value(0.7)).current;
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const sweep = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(1)).current;
   const [displayShares, setDisplayShares] = useState(0);
   const [displayAmount, setDisplayAmount] = useState(0);
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.spring(scaleAnim, { toValue: 1, friction: 6, tension: 80, useNativeDriver: true }),
-      Animated.timing(opacityAnim, { toValue: 1, duration: 220, useNativeDriver: true }),
-    ]).start();
+    Animated.spring(scaleAnim, { toValue: 1, friction: 6, tension: 80, useNativeDriver: true }).start(() => {
+      // Slow breathing pulse once the entrance spring settles -- keeps
+      // the badge feeling alive instead of static for however long the
+      // user lingers on this screen.
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulse, { toValue: 1.06, duration: 1100, useNativeDriver: true }),
+          Animated.timing(pulse, { toValue: 1, duration: 1100, useNativeDriver: true }),
+        ])
+      ).start();
+    });
+    Animated.timing(opacityAnim, { toValue: 1, duration: 220, useNativeDriver: true }).start();
 
     const sweepLoop = Animated.loop(
       Animated.sequence([
@@ -559,13 +576,13 @@ function BuySuccessView({ info, onDone, onViewPortfolio }) {
   return (
     <Animated.View style={{ opacity: opacityAnim, transform: [{ scale: scaleAnim }] }}>
       <View style={styles.buySuccessBadgeWrap}>
-        <View style={styles.buySuccessBadge}>
+        <Animated.View style={[styles.buySuccessBadge, { transform: [{ scale: pulse }] }]}>
           <Animated.View
             pointerEvents="none"
             style={[styles.shine, { transform: [{ translateX: sweepTranslate }, { rotate: '20deg' }] }]}
           />
           <Text style={styles.buySuccessCheck}>✓</Text>
-        </View>
+        </Animated.View>
       </View>
       <Text style={styles.buySuccessTitle}>Added to your portfolio</Text>
       <Text style={styles.buySuccessPlayer}>{info.playerName}</Text>
@@ -581,12 +598,12 @@ function BuySuccessView({ info, onDone, onViewPortfolio }) {
         </View>
       </View>
       <View style={styles.promptButtonRow}>
-        <TouchableOpacity style={styles.promptCancelBtn} onPress={onDone}>
+        <PressScale viewStyle={{ flex: 1 }} style={styles.promptCancelBtn} onPress={onDone}>
           <Text style={styles.promptCancelText}>Done</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.promptSubmitBtn} onPress={onViewPortfolio}>
+        </PressScale>
+        <PressScale viewStyle={{ flex: 1 }} style={styles.promptSubmitBtn} onPress={onViewPortfolio}>
           <Text style={styles.promptSubmitText}>View Portfolio</Text>
-        </TouchableOpacity>
+        </PressScale>
       </View>
     </Animated.View>
   );
@@ -1072,7 +1089,6 @@ function AppInner() {
   function BuyModalRenderer() {
     if (!buyModalPlayer) return null;
     const player = buyModalPlayer;
-    const tier = tierFor(player.rating, player.age);
     const amountNum = parseFloat(buyAmount) || 0;
     const fee = Math.round(amountNum * 0.02 * 100) / 100;
     const sharesPreview = player.current_price > 0 ? Math.max(0, amountNum - fee) / player.current_price : 0;
@@ -1088,10 +1104,11 @@ function AppInner() {
       <Modal visible transparent animationType="fade" onRequestClose={closeModal}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={styles.promptBackdrop}
+          style={styles.buySheetBackdrop}
         >
-          <CardEntrance>
+          <SheetEntrance>
             <View style={styles.buyCard}>
+              <View style={styles.buySheetHandle} />
               {buySuccessInfo ? (
                 <BuySuccessView
                   info={buySuccessInfo}
@@ -1103,10 +1120,8 @@ function AppInner() {
                   <View style={styles.buyCardHeader}>
                     <ChipIcon />
                     <View style={styles.ratingBadge}>
-                      <Text style={[styles.ratingNumber, { color: player.rating ? tier.accent : tier.dim }]}>
-                        {player.rating || '—'}
-                      </Text>
-                      <Text style={[styles.ratingLabel, { color: tier.dim }]}>RATING</Text>
+                      <Text style={styles.buyRatingNumber}>{player.rating || '—'}</Text>
+                      <Text style={styles.buyRatingLabel}>RATING</Text>
                     </View>
                   </View>
                   <Text style={styles.buyPlayerName}>{player.name}</Text>
@@ -1160,21 +1175,22 @@ function AppInner() {
                   <Text style={styles.buyAvailableText}>Available: {formatSC(cash || 0, 2)}</Text>
 
                   <View style={styles.promptButtonRow}>
-                    <TouchableOpacity style={styles.promptCancelBtn} onPress={closeModal}>
+                    <PressScale viewStyle={{ flex: 1 }} style={styles.promptCancelBtn} onPress={closeModal}>
                       <Text style={styles.promptCancelText}>Cancel</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
+                    </PressScale>
+                    <PressScale
+                      viewStyle={{ flex: 1 }}
                       style={[styles.promptSubmitBtn, !canSubmit && styles.heroButtonDisabled]}
                       onPress={() => submitBuy()}
                       disabled={!canSubmit}
                     >
                       <Text style={styles.promptSubmitText}>{actionBusy ? 'Investing…' : 'Invest'}</Text>
-                    </TouchableOpacity>
+                    </PressScale>
                   </View>
                 </>
               )}
             </View>
-          </CardEntrance>
+          </SheetEntrance>
         </KeyboardAvoidingView>
       </Modal>
     );
@@ -3202,8 +3218,29 @@ const styles = StyleSheet.create({
     flex: 1, paddingVertical: 14, borderRadius: 14, alignItems: 'center', backgroundColor: '#161410',
   },
   promptSubmitText: { fontSize: 14.5, fontWeight: '700', color: '#faf9f6' },
-  buyCard: { backgroundColor: '#faf9f6', borderRadius: 24, padding: 22 },
+  // Bottom sheet, not a centred dialog -- pinned to the screen's
+  // bottom edge via buySheetBackdrop's justifyContent, rounded only
+  // on top so it reads as a native sheet rather than a floating card.
+  buySheetBackdrop: {
+    flex: 1, backgroundColor: 'rgba(22,20,16,0.45)', justifyContent: 'flex-end',
+  },
+  buyCard: {
+    backgroundColor: '#faf9f6', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingTop: 10, paddingHorizontal: 22, paddingBottom: 30,
+  },
+  buySheetHandle: {
+    width: 36, height: 4, borderRadius: 2, backgroundColor: '#e8e3d8',
+    alignSelf: 'center', marginBottom: 16,
+  },
   buyCardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 },
+  // The card's own ratingNumber/ratingLabel colors are tuned to sit on
+  // a dark tier-gradient background -- on this light sheet they read
+  // washed out, so the buy sheet gets its own: gold for the number
+  // (the app's one consistent "this number matters" accent, also used
+  // on the success checkmark) and the same muted grey as every other
+  // label in this sheet.
+  buyRatingNumber: { fontSize: 20, fontWeight: '800', color: '#c9a227', lineHeight: 22 },
+  buyRatingLabel: { fontSize: 9, fontWeight: '700', color: '#918c81', letterSpacing: 1 },
   buyPlayerName: { fontSize: 20, fontWeight: '800', color: '#161410', letterSpacing: -0.3 },
   buyPlayerSub: { fontSize: 13, color: '#8a8578', marginTop: 2, marginBottom: 10 },
   buyPriceRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 18 },
@@ -3215,11 +3252,15 @@ const styles = StyleSheet.create({
     paddingVertical: 10, paddingHorizontal: 16, borderRadius: 14,
     backgroundColor: '#ffffff', borderWidth: 1.5, borderColor: '#e8e3d8',
   },
-  buyChipActive: { backgroundColor: '#161410', borderColor: '#161410' },
+  // Gold border + gold text on selection, not a flat black/white
+  // invert -- ties the selected state to the same accent used
+  // everywhere else a number matters (ratings, the success check),
+  // instead of a generic "active pill" treatment.
+  buyChipActive: { backgroundColor: '#161410', borderColor: '#eec98a' },
   buyChipDisabled: { opacity: 0.35 },
   buyChipMax: { backgroundColor: '#f1dfd4', borderColor: '#e2c47c' },
   buyChipText: { fontSize: 14, fontWeight: '700', color: '#161410' },
-  buyChipTextActive: { color: '#faf9f6' },
+  buyChipTextActive: { color: '#eec98a' },
   buyCustomInputWrap: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: '#ffffff',
     borderWidth: 1.5, borderColor: '#e8e3d8', borderRadius: 14,
@@ -3234,7 +3275,9 @@ const styles = StyleSheet.create({
   buySuccessBadge: {
     width: 72, height: 72, borderRadius: 36, backgroundColor: '#161410',
     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-    shadowColor: '#141208', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.25, shadowRadius: 20, elevation: 6,
+    // Gold-tinted glow rather than a plain drop shadow -- reads as the
+    // badge itself giving off light, not just sitting above the sheet.
+    shadowColor: '#c9a227', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.5, shadowRadius: 26, elevation: 6,
   },
   buySuccessCheck: { fontSize: 32, fontWeight: '800', color: '#eec98a' },
   buySuccessTitle: {
