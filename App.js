@@ -99,7 +99,6 @@ const TIER_BG_URIS = {
 // rather than several unrelated designs.
 // Quick-pick amounts for the Buy modal, scaled to the 1,000 SC starting
 // capital rather than arbitrary round numbers.
-const BUY_SHARE_PRESETS = [1, 5, 10, 25];
 
 const TIERS = {
   elite:    { bg: 'elite',    label: 'ELITE',    accent: '#e2c47c', text: '#f5f2ec', dim: 'rgba(245,242,236,0.5)',  border: 'rgba(226,196,124,0.35)', gain: '#6fcf97' },
@@ -575,64 +574,38 @@ function PurchaseTransitionWrap({ origin, children }) {
 // "particle" motion the brief explicitly allows, kept deliberately
 // sparse (not confetti): each dot runs once, staggered, and is gone
 // well within the ~2s confirmation window.
-function ConfirmationMotes({ count = 7 }) {
-  const motes = useRef(
-    Array.from({ length: count }, (_, i) => ({
-      left: 18 + ((i * 97) % 84), // deterministic spread, no Math.random jitter between renders
-      delay: (i * 83) % 420,
-      duration: 1100 + ((i * 53) % 400),
-      drift: 70 + ((i * 29) % 50),
-      anim: new Animated.Value(0),
-    }))
-  ).current;
-
-  useEffect(() => {
-    const anims = motes.map((m) =>
-      Animated.timing(m.anim, { toValue: 1, duration: m.duration, delay: m.delay, easing: Easing.out(Easing.quad), useNativeDriver: true })
-    );
-    Animated.parallel(anims).start();
-  }, []);
-
-  return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
-      {motes.map((m, i) => {
-        const translateY = m.anim.interpolate({ inputRange: [0, 1], outputRange: [0, -m.drift] });
-        const opacity = m.anim.interpolate({ inputRange: [0, 0.15, 0.75, 1], outputRange: [0, 1, 1, 0] });
-        return (
-          <Animated.View
-            key={i}
-            style={{
-              position: 'absolute', left: `${m.left}%`, bottom: '38%', width: 4, height: 4, borderRadius: 2,
-              backgroundColor: '#e2c47c', opacity, transform: [{ translateY }],
-            }}
-          />
-        );
-      })}
-    </View>
-  );
-}
-
 // The full-screen confirmation shown after a purchase succeeds --
 // replaces a plain Alert.alert (which barely renders on web) with a
-// genuine moment: the portrait as the focal point, an eased share
-// count-up (so the number feels earned rather than just appearing),
-// a few restrained gold motes, and a short, named sequence (not a
-// generic green tick) -- all inside roughly 2 seconds, after which
-// Done/View Portfolio are already tappable rather than gated behind
-// the animation finishing.
-function PurchaseConfirmation({ info, onDone, onViewPortfolio }) {
+// genuine moment built from three things only: the portrait (large,
+// full-bleed, a slow settle rather than a bounce), a headline in the
+// app's own Fraunces display face, and one plain sentence of real
+// numbers (an eased count-up, not a boxed stat row) -- deliberately
+// nothing else. Headline and summary reveal in a short staggered
+// sequence (fade + rise) so the moment has timing without needing
+// particles or a badge to carry the excitement.
+function PurchaseConfirmation({ info, onDone, onViewPortfolio, fontsLoaded }) {
   const portraitScale = useRef(new Animated.Value(1.08)).current;
-  const opacityAnim = useRef(new Animated.Value(0)).current;
-  const badgeScale = useRef(new Animated.Value(0.6)).current;
+  const wrapOpacity = useRef(new Animated.Value(0)).current;
+  const headlineRise = useRef(new Animated.Value(14)).current;
+  const headlineOpacity = useRef(new Animated.Value(0)).current;
+  const summaryRise = useRef(new Animated.Value(14)).current;
+  const summaryOpacity = useRef(new Animated.Value(0)).current;
   const [displayShares, setDisplayShares] = useState(0);
 
   useEffect(() => {
-    Animated.timing(opacityAnim, { toValue: 1, duration: 260, useNativeDriver: true }).start();
-    Animated.timing(portraitScale, { toValue: 1, duration: 900, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-    Animated.spring(badgeScale, { toValue: 1, friction: 6, tension: 90, delay: 120, useNativeDriver: true }).start();
+    Animated.timing(wrapOpacity, { toValue: 1, duration: 240, useNativeDriver: true }).start();
+    Animated.timing(portraitScale, { toValue: 1, duration: 1100, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    Animated.parallel([
+      Animated.timing(headlineOpacity, { toValue: 1, duration: 420, delay: 180, useNativeDriver: true }),
+      Animated.timing(headlineRise, { toValue: 0, duration: 420, delay: 180, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
+    Animated.parallel([
+      Animated.timing(summaryOpacity, { toValue: 1, duration: 420, delay: 380, useNativeDriver: true }),
+      Animated.timing(summaryRise, { toValue: 0, duration: 420, delay: 380, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+    ]).start();
 
-    const duration = 900;
-    const delay = 150;
+    const duration = 800;
+    const delay = 400;
     const start = Date.now() + delay;
     let raf;
     const tick = () => {
@@ -647,7 +620,7 @@ function PurchaseConfirmation({ info, onDone, onViewPortfolio }) {
   }, []);
 
   return (
-    <Animated.View style={{ flex: 1, opacity: opacityAnim }}>
+    <Animated.View style={{ flex: 1, opacity: wrapOpacity }}>
       <View style={styles.confirmPortraitWrap}>
         {info.photoUrl ? (
           <Animated.Image
@@ -663,33 +636,28 @@ function PurchaseConfirmation({ info, onDone, onViewPortfolio }) {
         <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
           <Defs>
             <LinearGradient id="confirmPortraitFadeGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-              <Stop offset="55%" stopColor="#0e0d0c" stopOpacity="0" />
+              <Stop offset="50%" stopColor="#0e0d0c" stopOpacity="0" />
               <Stop offset="100%" stopColor="#0e0d0c" stopOpacity="1" />
             </LinearGradient>
           </Defs>
           <Rect x="0" y="0" width="100%" height="100%" fill="url(#confirmPortraitFadeGradient)" />
         </Svg>
-        <ConfirmationMotes />
       </View>
 
       <View style={styles.confirmBody}>
-        <Animated.View style={{ transform: [{ scale: badgeScale }], alignSelf: 'flex-start' }}>
-          <Text style={styles.confirmEyebrow}>POSITION ACQUIRED</Text>
-        </Animated.View>
-        <Text style={styles.confirmHeadline}>You're on the board.</Text>
-        <Text style={styles.confirmPlayerName}>{info.playerName}</Text>
-
-        <View style={styles.confirmStatsRow}>
-          <View style={styles.confirmStat}>
-            <Text style={styles.confirmStatValue}>{displayShares.toFixed(2)}</Text>
-            <Text style={styles.confirmStatLabel}>SHARES ACQUIRED</Text>
-          </View>
-          <View style={styles.confirmStatDivider} />
-          <View style={styles.confirmStat}>
-            <Text style={styles.confirmStatValue}>{Math.round(info.amount)}</Text>
-            <Text style={styles.confirmStatLabel}>SC CREDITS</Text>
-          </View>
-        </View>
+        <Animated.Text
+          style={[
+            styles.confirmHeadline,
+            fontsLoaded && { fontFamily: 'Fraunces-SemiBold' },
+            { opacity: headlineOpacity, transform: [{ translateY: headlineRise }] },
+          ]}
+        >
+          You're on the board.
+        </Animated.Text>
+        <Animated.Text style={[styles.confirmSummary, { opacity: summaryOpacity, transform: [{ translateY: summaryRise }] }]}>
+          <Text style={styles.confirmSummaryValue}>{displayShares.toFixed(2)}</Text> shares of {info.playerName} for{' '}
+          <Text style={styles.confirmSummaryValue}>{Math.round(info.amount)} SC</Text>
+        </Animated.Text>
 
         <View style={{ flex: 1 }} />
         <View style={styles.promptButtonRow}>
@@ -1189,6 +1157,13 @@ function AppInner() {
   }
 
   function PurchaseScreenRenderer() {
+    // Hooks first, unconditionally -- this component is only ever
+    // mounted (via <PurchaseScreenRenderer /> in JSX) while
+    // buyModalPlayer is set, since the call site itself doesn't render
+    // it otherwise, but guard here too rather than returning null
+    // before these run.
+    const [editingQty, setEditingQty] = useState(false);
+    const [qtyDraft, setQtyDraft] = useState('');
     if (!buyModalPlayer) return null;
     const player = buyModalPlayer;
     const price = player.current_price || 0;
@@ -1202,7 +1177,6 @@ function AppInner() {
     const maxShares = price > 0 ? Math.floor(((maxCash * 0.98) / price) * 100) / 100 : 0;
     const qty = buyShareQty;
     const amountNum = price > 0 ? Math.round((qty * price / 0.98) * 100) / 100 : 0;
-    const fee = Math.round(amountNum * 0.02 * 100) / 100;
     const remaining = Math.max(0, Math.round((maxCash - amountNum) * 100) / 100);
     const belowMinimum = amountNum > 0 && amountNum < 5;
     const canSubmit = qty > 0 && amountNum >= 5 && amountNum <= maxCash && !actionBusy;
@@ -1231,6 +1205,18 @@ function AppInner() {
     if (!actionBusy && belowMinimum) buyLabel = 'Minimum 5 SC';
     else if (!actionBusy && amountNum > maxCash) buyLabel = 'Not enough SC';
 
+    function openQtyEditor() {
+      setQtyDraft(Number.isInteger(qty) ? String(qty) : qty.toFixed(2));
+      setEditingQty(true);
+    }
+    function commitQtyEditor() {
+      const parsed = parseFloat(qtyDraft);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        setQty(Math.min(maxShares > 0 ? maxShares : parsed, parsed));
+      }
+      setEditingQty(false);
+    }
+
     return (
       <Modal visible transparent={false} animationType="none" onRequestClose={closeScreen}>
         <PurchaseTransitionWrap origin={buyTransitionOrigin}>
@@ -1238,6 +1224,7 @@ function AppInner() {
             {buySuccessInfo ? (
               <PurchaseConfirmation
                 info={buySuccessInfo}
+                fontsLoaded={fontsLoaded}
                 onDone={closeScreen}
                 onViewPortfolio={() => { closeScreen(); setCurrentTab('portfolio'); }}
               />
@@ -1250,87 +1237,86 @@ function AppInner() {
                 </View>
 
                 <ScrollView contentContainerStyle={styles.purchaseScroll} keyboardShouldPersistTaps="handled">
-                  <View style={styles.purchaseIdentityRow}>
+                  {/* The player is the centrepiece: a large, full-bleed
+                      portrait with name/club/price folded into one
+                      caption over it, instead of a small avatar beside
+                      a block of separately-labelled text. */}
+                  <View style={styles.purchasePortraitHero}>
                     {player.photo_url ? (
-                      <Image source={{ uri: player.photo_url }} style={styles.purchasePortraitSmall} resizeMode="cover" />
+                      <Image source={{ uri: player.photo_url }} style={styles.purchasePortraitImage} resizeMode="cover" />
                     ) : (
-                      <View style={styles.purchasePortraitSmallFallback}>
-                        <Text style={styles.purchasePortraitSmallFallbackText}>{player.name.charAt(0)}</Text>
+                      <View style={styles.purchasePortraitFallback}>
+                        <Text style={styles.purchasePortraitFallbackText}>{player.name.charAt(0)}</Text>
                       </View>
                     )}
-                    <View style={{ flex: 1, minWidth: 0 }}>
+                    <Svg style={StyleSheet.absoluteFill} width="100%" height="100%">
+                      <Defs>
+                        <LinearGradient id="purchasePortraitFade" x1="0%" y1="0%" x2="0%" y2="100%">
+                          <Stop offset="45%" stopColor="#0e0d0c" stopOpacity="0" />
+                          <Stop offset="100%" stopColor="#0e0d0c" stopOpacity="1" />
+                        </LinearGradient>
+                      </Defs>
+                      <Rect x="0" y="0" width="100%" height="100%" fill="url(#purchasePortraitFade)" />
+                    </Svg>
+                    {player.rating ? <Text style={styles.purchasePortraitRating}>{player.rating}</Text> : null}
+                    <View style={styles.purchasePortraitCaption}>
                       <Text style={styles.purchasePlayerName} numberOfLines={1}>{player.name}</Text>
                       <Text style={styles.purchasePlayerSub} numberOfLines={1}>
                         {[player.position, player.club].filter(Boolean).join(' · ')}
+                        {price ? ` · ${Math.round(price).toLocaleString('en-US')} SC/share` : ''}
                       </Text>
                     </View>
-                    <Text style={styles.purchaseRating}>{player.rating || '—'}</Text>
                   </View>
 
-                  <View style={styles.purchasePriceRow}>
-                    <Text style={styles.purchasePriceLabel}>Current share price</Text>
-                    <Text style={styles.purchasePriceValue}>{price ? Math.round(price).toLocaleString('en-US') : '—'} SC</Text>
-                  </View>
-
-                  <View style={styles.purchaseHero}>
-                    <Text style={styles.purchaseHeroLabel}>SHARES TO BUY</Text>
-                    <View style={styles.purchaseStepperRow}>
-                      <TouchableOpacity
-                        onPress={decrement}
-                        disabled={qty <= 1}
-                        style={[styles.purchaseStepperBtn, qty <= 1 && styles.purchaseStepperBtnDisabled]}
-                      >
-                        <Text style={styles.purchaseStepperGlyph}>−</Text>
-                      </TouchableOpacity>
-                      <Text style={styles.purchaseHeroQty}>{Number.isInteger(qty) ? qty : qty.toFixed(2)}</Text>
-                      <TouchableOpacity
+                  <View style={styles.purchaseBody}>
+                    {/* The share count is the one true hero number on
+                        this screen -- tap it to type an exact value,
+                        or use the stepper either side. */}
+                    <View style={styles.purchaseShareRow}>
+                      <PressScale onPress={decrement} disabled={qty <= 1} style={styles.purchaseStepperBtn}>
+                        <Text style={[styles.purchaseStepperGlyph, qty <= 1 && styles.purchaseStepperGlyphDisabled]}>−</Text>
+                      </PressScale>
+                      {editingQty ? (
+                        <TextInput
+                          style={styles.purchaseHeroQty}
+                          value={qtyDraft}
+                          onChangeText={setQtyDraft}
+                          onBlur={commitQtyEditor}
+                          onSubmitEditing={commitQtyEditor}
+                          keyboardType="decimal-pad"
+                          autoFocus
+                          selectTextOnFocus
+                        />
+                      ) : (
+                        <TouchableOpacity onPress={openQtyEditor}>
+                          <Text style={styles.purchaseHeroQty}>{Number.isInteger(qty) ? qty : qty.toFixed(2)}</Text>
+                        </TouchableOpacity>
+                      )}
+                      <PressScale
                         onPress={increment}
                         disabled={maxShares > 0 && qty >= maxShares}
-                        style={[styles.purchaseStepperBtn, maxShares > 0 && qty >= maxShares && styles.purchaseStepperBtnDisabled]}
+                        style={styles.purchaseStepperBtn}
                       >
-                        <Text style={styles.purchaseStepperGlyph}>+</Text>
-                      </TouchableOpacity>
+                        <Text style={[styles.purchaseStepperGlyph, maxShares > 0 && qty >= maxShares && styles.purchaseStepperGlyphDisabled]}>+</Text>
+                      </PressScale>
                     </View>
+                    <Text style={styles.purchaseShareCaption}>
+                      {qty === 1 ? 'share' : 'shares'}
+                      {maxShares >= 0.01 ? (
+                        <>
+                          {'  ·  '}
+                          <Text style={styles.purchaseMaxLink} onPress={() => setQty(maxShares)}>Max</Text>
+                        </>
+                      ) : null}
+                    </Text>
 
-                    <View style={styles.purchaseQuickRow}>
-                      {BUY_SHARE_PRESETS.map((v) => (
-                        <TouchableOpacity key={v} onPress={() => setQty(v)} disabled={v > maxShares}>
-                          <Text style={[
-                            styles.purchaseQuickText,
-                            qty === v && styles.purchaseQuickTextActive,
-                            v > maxShares && styles.purchaseQuickTextDisabled,
-                          ]}>{v}</Text>
-                        </TouchableOpacity>
-                      ))}
-                      <TouchableOpacity onPress={() => setQty(maxShares)} disabled={maxShares < 0.01}>
-                        <Text style={[
-                          styles.purchaseQuickText,
-                          qty === maxShares && qty > 0 && styles.purchaseQuickTextActive,
-                          maxShares < 0.01 && styles.purchaseQuickTextDisabled,
-                        ]}>Max</Text>
-                      </TouchableOpacity>
-                    </View>
+                    <Text style={styles.purchaseTotalLine}>≈ {amountNum.toFixed(2)} SC total</Text>
+                    <Text style={styles.purchaseBalanceLine}>
+                      {remaining.toFixed(0)} SC available after this purchase
+                    </Text>
+
+                    {buyError ? <Text style={styles.purchaseErrorText}>{buyError}</Text> : null}
                   </View>
-
-                  <View style={styles.purchaseFinanceRow}>
-                    <View style={styles.purchaseFinanceCol}>
-                      <Text style={styles.purchaseFinanceValue}>{amountNum.toFixed(2)}</Text>
-                      <Text style={styles.purchaseFinanceLabel}>TOTAL SC</Text>
-                    </View>
-                    <View style={styles.purchaseFinanceColDivider} />
-                    <View style={styles.purchaseFinanceCol}>
-                      <Text style={styles.purchaseFinanceValue}>{formatSC(cash || 0, 0)}</Text>
-                      <Text style={styles.purchaseFinanceLabel}>AVAILABLE</Text>
-                    </View>
-                    <View style={styles.purchaseFinanceColDivider} />
-                    <View style={styles.purchaseFinanceCol}>
-                      <Text style={styles.purchaseFinanceValue}>{remaining.toFixed(0)}</Text>
-                      <Text style={styles.purchaseFinanceLabel}>REMAINING</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.purchaseFeeNote}>Includes {fee.toFixed(2)} SC fee</Text>
-
-                  {buyError ? <Text style={styles.purchaseErrorText}>{buyError}</Text> : null}
                 </ScrollView>
 
                 <View style={styles.purchaseFooter}>
@@ -3411,64 +3397,49 @@ const styles = StyleSheet.create({
   purchaseScreen: { flex: 1, backgroundColor: '#0e0d0c' },
   purchaseTopBar: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 4, alignItems: 'flex-end' },
   purchaseClose: { fontSize: 16, color: 'rgba(245,242,236,0.5)', padding: 6 },
-  purchaseScroll: { paddingHorizontal: 24, paddingBottom: 20 },
-  purchaseIdentityRow: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingBottom: 18, marginBottom: 18, borderBottomWidth: 1, borderBottomColor: 'rgba(245,242,236,0.1)',
+  purchaseScroll: { paddingBottom: 20 },
+  // The player as centrepiece: a tall, full-bleed portrait (editorial
+  // sports photography, not a little profile card) with name/club/
+  // price folded into one caption sitting over its own gradient fade,
+  // and the rating a single quiet mark in the corner -- no avatar
+  // circle, no bordered row, no separate boxed price field.
+  purchasePortraitHero: { width: '100%', height: 340, position: 'relative', backgroundColor: '#161518' },
+  purchasePortraitImage: { width: '100%', height: '100%' },
+  purchasePortraitFallback: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
+  purchasePortraitFallbackText: { fontSize: 88, fontWeight: '800', color: 'rgba(226,196,124,0.25)' },
+  purchasePortraitRating: {
+    position: 'absolute', top: 18, right: 22, fontSize: 15, fontWeight: '700',
+    color: '#e2c47c', fontVariant: ['tabular-nums'],
   },
-  purchasePortraitSmall: { width: 44, height: 44, borderRadius: 22 },
-  purchasePortraitSmallFallback: {
-    width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(226,196,124,0.14)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  purchasePortraitSmallFallbackText: { fontSize: 17, fontWeight: '800', color: '#e2c47c' },
-  purchasePlayerName: { fontSize: 17, fontWeight: '700', color: '#f5f2ec', letterSpacing: -0.2 },
-  purchasePlayerSub: { fontSize: 12.5, color: 'rgba(245,242,236,0.5)', marginTop: 2 },
-  purchaseRating: { fontSize: 18, fontWeight: '800', color: '#e2c47c', fontVariant: ['tabular-nums'] },
-  purchasePriceRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline',
-    paddingBottom: 26, marginBottom: 8,
-  },
-  purchasePriceLabel: { fontSize: 13, color: 'rgba(245,242,236,0.5)' },
-  purchasePriceValue: { fontSize: 15, fontWeight: '700', color: '#f5f2ec', fontVariant: ['tabular-nums'] },
-  // The share-quantity selector is the centrepiece: a huge number with
-  // minimal flanking stepper controls, not another row of equal-weight
-  // boxed chips.
-  purchaseHero: { alignItems: 'center', paddingVertical: 18 },
-  purchaseHeroLabel: { fontSize: 11, fontWeight: '700', color: 'rgba(245,242,236,0.45)', letterSpacing: 2, marginBottom: 14 },
-  purchaseStepperRow: { flexDirection: 'row', alignItems: 'center', gap: 28, marginBottom: 20 },
-  purchaseStepperBtn: {
-    width: 40, height: 40, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(245,242,236,0.2)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  purchaseStepperBtnDisabled: { opacity: 0.3 },
-  purchaseStepperGlyph: { fontSize: 18, fontWeight: '600', color: '#f5f2ec', marginTop: -2 },
+  purchasePortraitCaption: { position: 'absolute', left: 24, right: 24, bottom: 20 },
+  purchasePlayerName: { fontSize: 24, fontWeight: '700', color: '#f5f2ec', letterSpacing: -0.4 },
+  purchasePlayerSub: { fontSize: 13, color: 'rgba(245,242,236,0.6)', marginTop: 4 },
+  purchaseBody: { paddingHorizontal: 24, paddingTop: 30 },
+  // The share count is the one hero number on this screen -- large,
+  // tap-to-edit like a real amount field, flanked by quiet stepper
+  // glyphs with no visible button chrome at rest. Everything else
+  // (unit, Max, total, balance) is plain text underneath it, in
+  // descending weight, not a second row of equal-weight controls.
+  purchaseShareRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 22 },
+  purchaseStepperBtn: { width: 36, height: 44, alignItems: 'center', justifyContent: 'center' },
+  purchaseStepperGlyph: { fontSize: 22, fontWeight: '500', color: 'rgba(245,242,236,0.7)' },
+  purchaseStepperGlyphDisabled: { color: 'rgba(245,242,236,0.2)' },
   purchaseHeroQty: {
-    fontSize: 56, fontWeight: '700', color: '#f5f2ec', letterSpacing: -1.5,
-    fontVariant: ['tabular-nums'], minWidth: 120, textAlign: 'center',
+    fontSize: 64, fontWeight: '700', color: '#f5f2ec', letterSpacing: -2,
+    fontVariant: ['tabular-nums'], minWidth: 140, textAlign: 'center', padding: 0,
   },
-  // Quick-select values are plain text with an underline for the active
-  // one, not pill buttons -- there are already two visual treatments
-  // for "selected" on this screen (the stepper and this row); a third
-  // boxed-pill version of the same idea is exactly the clutter being
-  // avoided.
-  purchaseQuickRow: { flexDirection: 'row', gap: 22 },
-  purchaseQuickText: {
-    fontSize: 14, fontWeight: '600', color: 'rgba(245,242,236,0.5)', paddingBottom: 4,
-    borderBottomWidth: 2, borderBottomColor: 'transparent',
+  purchaseShareCaption: {
+    fontSize: 13, color: 'rgba(245,242,236,0.45)', textAlign: 'center', marginTop: 6,
   },
-  purchaseQuickTextActive: { color: '#e2c47c', borderBottomColor: '#e2c47c' },
-  purchaseQuickTextDisabled: { opacity: 0.3 },
-  purchaseFinanceRow: {
-    flexDirection: 'row', paddingVertical: 20, marginTop: 14,
-    borderTopWidth: 1, borderTopColor: 'rgba(245,242,236,0.1)',
+  purchaseMaxLink: { color: '#e2c47c', fontWeight: '700' },
+  purchaseTotalLine: {
+    fontSize: 19, fontWeight: '700', color: '#f5f2ec', textAlign: 'center',
+    marginTop: 36, fontVariant: ['tabular-nums'],
   },
-  purchaseFinanceCol: { flex: 1, alignItems: 'center' },
-  purchaseFinanceColDivider: { width: 1, backgroundColor: 'rgba(245,242,236,0.1)' },
-  purchaseFinanceValue: { fontSize: 16, fontWeight: '700', color: '#f5f2ec', fontVariant: ['tabular-nums'] },
-  purchaseFinanceLabel: { fontSize: 9.5, fontWeight: '700', color: 'rgba(245,242,236,0.4)', letterSpacing: 1, marginTop: 4 },
-  purchaseFeeNote: { fontSize: 11.5, color: 'rgba(245,242,236,0.4)', textAlign: 'center', marginTop: 10 },
-  purchaseErrorText: { fontSize: 13, color: '#e8897a', textAlign: 'center', marginTop: 18, lineHeight: 18 },
+  purchaseBalanceLine: {
+    fontSize: 12.5, color: 'rgba(245,242,236,0.4)', textAlign: 'center', marginTop: 8,
+  },
+  purchaseErrorText: { fontSize: 13, color: '#e8897a', textAlign: 'center', marginTop: 24, lineHeight: 18 },
   purchaseFooter: { paddingHorizontal: 24, paddingTop: 10, paddingBottom: 20 },
   // Buy-sheet-specific button styles -- NOT the shared promptCancelBtn/
   // promptSubmitBtn (those stay light-themed for the generic showPrompt
@@ -3489,25 +3460,18 @@ const styles = StyleSheet.create({
   holdFill: {
     position: 'absolute', top: 0, bottom: 0, left: 0, backgroundColor: 'rgba(22,20,16,0.22)',
   },
-  // Confirmation: the portrait is the focal point (fading into the
-  // screen's own background rather than sitting in a framed container),
-  // with the headline/stats below it -- not a generic badge-and-tick.
-  confirmPortraitWrap: { width: '100%', height: '46%', position: 'relative', overflow: 'hidden', backgroundColor: '#161518' },
+  // Confirmation: three things only -- the portrait (large, fading into
+  // the screen's own background), a headline in the app's own Fraunces
+  // display face, and one plain sentence of real numbers. No badge, no
+  // divided stat tiles, no eyebrow tag.
+  confirmPortraitWrap: { width: '100%', height: '54%', position: 'relative', overflow: 'hidden', backgroundColor: '#161518' },
   confirmPortrait: { width: '100%', height: '100%' },
   confirmPortraitFallback: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
   confirmPortraitFallbackText: { fontSize: 72, fontWeight: '800', color: 'rgba(226,196,124,0.3)' },
-  confirmBody: { flex: 1, paddingHorizontal: 26, paddingTop: 22, paddingBottom: 20 },
-  confirmEyebrow: { fontSize: 11, fontWeight: '800', color: '#e2c47c', letterSpacing: 2.5, marginBottom: 10 },
-  confirmHeadline: { fontSize: 29, fontWeight: '800', color: '#f5f2ec', letterSpacing: -0.6, marginBottom: 6 },
-  confirmPlayerName: { fontSize: 14.5, color: 'rgba(245,242,236,0.55)', marginBottom: 26 },
-  confirmStatsRow: {
-    flexDirection: 'row', paddingVertical: 18,
-    borderTopWidth: 1, borderBottomWidth: 1, borderColor: 'rgba(245,242,236,0.1)',
-  },
-  confirmStat: { flex: 1, alignItems: 'center' },
-  confirmStatDivider: { width: 1, backgroundColor: 'rgba(245,242,236,0.1)' },
-  confirmStatValue: { fontSize: 24, fontWeight: '800', color: '#f5f2ec', letterSpacing: -0.3, fontVariant: ['tabular-nums'] },
-  confirmStatLabel: { fontSize: 10, fontWeight: '700', color: 'rgba(245,242,236,0.45)', letterSpacing: 1, marginTop: 4 },
+  confirmBody: { flex: 1, paddingHorizontal: 26, paddingTop: 26, paddingBottom: 20 },
+  confirmHeadline: { fontSize: 32, fontWeight: '700', color: '#f5f2ec', letterSpacing: -0.6, marginBottom: 12 },
+  confirmSummary: { fontSize: 16, color: 'rgba(245,242,236,0.6)', lineHeight: 23 },
+  confirmSummaryValue: { color: '#f5f2ec', fontWeight: '700', fontVariant: ['tabular-nums'] },
   notifRow: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 12,
     paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#eee9dd',
