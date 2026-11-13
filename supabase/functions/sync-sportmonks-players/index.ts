@@ -2483,6 +2483,15 @@ Deno.serve(async () => {
         // thousands of players nobody can sanity-check by eye. See
         // CURATED_RATINGS' own comment for why this exists.
         const rating100 = CURATED_RATINGS[playerName] ?? computeRating(rawRating, minutes, team.name, team.leagueName, positionName);
+        // This flat rating*2 is what actually gets sent below, but as of
+        // migration 0018 it's no longer what gets used: upsert_sportmonks_player
+        // now computes its own seed price (public.compute_seed_price), a
+        // nuanced age+rating curve that gives real wonderkids a premium
+        // over a same-rated veteran. Computed here only to keep this
+        // function's p_seed_price argument non-null for the RPC's
+        // signature -- see that migration for the real logic, and why it
+        // had to move to SQL rather than just changing this line (this
+        // function can't be redeployed from the account running it).
         const seedPrice = Math.max(10, Math.round(rating100 * 2));
 
         const { error } = await supabase.rpc("upsert_sportmonks_player", {
