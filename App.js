@@ -2644,13 +2644,19 @@ function AppInner() {
               {q.question}
             </Text>
             {q.options.map((opt, i) => {
-              const TRAIT_COLORS = {
-                instinct: '#e8954a', analytical: '#5e9b8a', spotter: '#4f9c7f', contrarian: '#c96b8a',
-              };
+              // Keyed by position, not opt.trait -- some questions use the
+              // same trait on more than one option (by design, for scoring),
+              // which with a trait-keyed color repeated that color within
+              // the question. Cycling through 4 colors by position fixes
+              // the repeat, but the original trait palette's teal and green
+              // (spotter/analytical, #5e9b8a and #4f9c7f) still read as "two
+              // greens" side by side even when neither repeats -- swapped
+              // the green for a blue so all 4 are clearly distinct hues.
+              const OPTION_COLORS = ['#c96b8a', '#5e9b8a', '#3a5aa8', '#e8954a'];
               return (
                 <TouchableOpacity
                   key={i}
-                  style={[styles.quizOption, { borderLeftColor: TRAIT_COLORS[opt.trait] || '#8a8578' }]}
+                  style={[styles.quizOption, { borderLeftColor: OPTION_COLORS[i % OPTION_COLORS.length] }]}
                   onPress={() => {
                     const next = [...quizAnswers];
                     next[onboardingStep - 2] = opt;
