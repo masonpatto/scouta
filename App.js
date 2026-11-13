@@ -1171,6 +1171,7 @@ function AppInner() {
   // a bare text field.
   const [buyModalPlayer, setBuyModalPlayer] = useState(null);
   const [buyInvestorCount, setBuyInvestorCount] = useState(null);
+  const [buyCapStatus, setBuyCapStatus] = useState(null);
   const [buyAmount, setBuyAmount] = useState('');
   const [buySuccessInfo, setBuySuccessInfo] = useState(null);
   const [sellModalHolding, setSellModalHolding] = useState(null);
@@ -1600,7 +1601,8 @@ function AppInner() {
     const fee = Math.round(amountNum * 0.02 * 100) / 100;
     const sharesPreview = player.current_price > 0 ? Math.max(0, amountNum - fee) / player.current_price : 0;
     const maxCash = Math.floor((cash || 0) * 100) / 100;
-    const canSubmit = amountNum > 0 && !actionBusy;
+    const soldOut = !!buyCapStatus?.sold_out;
+    const canSubmit = amountNum > 0 && !actionBusy && !soldOut;
 
     function closeModal() {
       setBuyModalPlayer(null);
@@ -1645,6 +1647,24 @@ function AppInner() {
                         ? 'No investors yet — be the first'
                         : `${buyInvestorCount} investor${buyInvestorCount === 1 ? '' : 's'} hold this player`}
                     </Text>
+                  ) : null}
+                  {buyCapStatus ? (
+                    <View style={styles.capWrap}>
+                      <View style={styles.capBarTrack}>
+                        <View
+                          style={[
+                            styles.capBarFill,
+                            { width: `${buyCapStatus.pct_filled}%` },
+                            soldOut && styles.capBarFillFull,
+                          ]}
+                        />
+                      </View>
+                      <Text style={[styles.capText, soldOut && styles.capTextFull]}>
+                        {soldOut
+                          ? 'Sold out — share ceiling reached'
+                          : `${formatSC(buyCapStatus.market_cap, 0)} / ${formatSC(buyCapStatus.ceiling, 0)} invested`}
+                      </Text>
+                    </View>
                   ) : null}
 
                   <Text style={styles.buyAmountLabel}>Invest</Text>
@@ -1698,7 +1718,9 @@ function AppInner() {
                       onPress={() => submitBuy()}
                       disabled={!canSubmit}
                     >
-                      <Text style={styles.promptSubmitText}>{actionBusy ? 'Investing…' : 'Invest'}</Text>
+                      <Text style={styles.promptSubmitText}>
+                        {soldOut ? 'Sold Out' : actionBusy ? 'Investing…' : 'Invest'}
+                      </Text>
                     </PressScale>
                   </View>
                 </>
@@ -2127,12 +2149,21 @@ function AppInner() {
     setBuyAmount('');
     setBuySuccessInfo(null);
     setBuyInvestorCount(null);
+    setBuyCapStatus(null);
     setBuyModalPlayer(player);
     // Fire-and-forget: the sheet renders immediately without waiting on
-    // this, the investor line just fills in a beat later once it lands.
+    // these, the investor line and fill bar just fill in a beat later
+    // once they land.
     callRpc('player_investor_count', { p_player_id: player.id })
       .then((count) => setBuyInvestorCount(typeof count === 'number' ? count : 0))
       .catch(() => setBuyInvestorCount(0));
+    refreshBuyCapStatus(player.id);
+  }
+
+  function refreshBuyCapStatus(playerId) {
+    callRpc('player_cap_status', { p_player_id: playerId })
+      .then((status) => setBuyCapStatus(status || null))
+      .catch(() => {});
   }
 
   async function submitBuy(amountOverride) {
@@ -2145,6 +2176,7 @@ function AppInner() {
       const result = await callRpc('buy_player', { p_player_id: player.id, p_amount: amount });
       if (!result.ok) {
         Alert.alert('Could not buy', result.reason);
+        if (result.sold_out) refreshBuyCapStatus(player.id);
       } else {
         const fee = Math.round(amount * 0.02 * 100) / 100;
         const shares = player.current_price > 0 ? Math.max(0, amount - fee) / player.current_price : 0;
@@ -4044,6 +4076,14 @@ const styles = StyleSheet.create({
   buyPlayerSub: { fontSize: 13, color: '#8a8578', marginTop: 2, marginBottom: 10 },
   buyPriceRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 6 },
   buyInvestorText: { fontSize: 12, color: '#918c81', marginBottom: 14 },
+  capWrap: { marginBottom: 14 },
+  capBarTrack: {
+    height: 6, borderRadius: 3, backgroundColor: '#e8e3d8', overflow: 'hidden', marginBottom: 5,
+  },
+  capBarFill: { height: 6, borderRadius: 3, backgroundColor: '#c9a227' },
+  capBarFillFull: { backgroundColor: '#c1483f' },
+  capText: { fontSize: 11.5, color: '#918c81' },
+  capTextFull: { color: '#c1483f', fontWeight: '700' },
   buyPriceMain: { fontSize: 22, fontWeight: '800', color: '#161410' },
   buyPriceSuffix: { fontSize: 13, fontWeight: '600', color: '#8a8578' },
   buyAmountLabel: { fontSize: 12, fontWeight: '700', color: '#918c81', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
