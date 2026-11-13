@@ -1824,21 +1824,38 @@ function AppInner() {
 
   async function toggleWatchlist(player) {
     const existing = watchlist.find((w) => w.player_id === player.id);
+    // Optimistic: flip the star immediately rather than waiting on a
+    // round trip + a full watchlist refetch (that gap was visible as a
+    // beat of lag before the star actually updated). Roll back to the
+    // pre-tap state if the request turns out to have failed.
+    const previousWatchlist = watchlist;
+    const tempId = `temp-${player.id}`;
+    if (existing) {
+      setWatchlist((prev) => prev.filter((w) => w.id !== existing.id));
+    } else {
+      setWatchlist((prev) => [...prev, { id: tempId, player_id: player.id, players: player }]);
+    }
     try {
       if (existing) {
-        await fetch(`${SUPABASE_URL}/rest/v1/watchlist?id=eq.${existing.id}`, {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/watchlist?id=eq.${existing.id}`, {
           method: 'DELETE',
           headers: authHeaders(),
         });
+        if (!res.ok) throw new Error('Could not remove from watchlist.');
       } else {
-        await fetch(`${SUPABASE_URL}/rest/v1/watchlist`, {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/watchlist`, {
           method: 'POST',
           headers: { ...authHeaders(), 'Content-Type': 'application/json', Prefer: 'return=minimal' },
           body: JSON.stringify({ user_id: session.user.id, player_id: player.id }),
         });
+        if (!res.ok) throw new Error('Could not add to watchlist.');
       }
-      await fetchWatchlist();
+      // Reconcile quietly in the background (picks up the real row id
+      // in place of tempId) -- the star itself already reflects the
+      // change, so this isn't on the critical path the user is waiting on.
+      fetchWatchlist();
     } catch (e) {
+      setWatchlist(previousWatchlist);
       Alert.alert('Error', e.message);
     }
   }
