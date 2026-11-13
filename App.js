@@ -3034,7 +3034,7 @@ function AppInner() {
           <Atmosphere />
           <ProgressBar />
           <View style={{ flex: 1, justifyContent: 'center' }}>
-            <Text style={styles.heroKicker}>ONE MORE THING</Text>
+            <Text style={styles.heroKicker}>QUICK BRIEFING</Text>
             <Text style={[styles.quizQuestionText, { textAlign: 'center', marginLeft: 0 }]}>How to Play</Text>
             {howToPlayCards()}
           </View>
