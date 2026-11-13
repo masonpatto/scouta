@@ -4454,7 +4454,7 @@ const styles = StyleSheet.create({
   honeypotField: {
     position: 'absolute', left: -9999, top: -9999, width: 1, height: 1, opacity: 0,
   },
-  legalConsentText: { fontSize: 11.5, color: '#918c81', textAlign: 'center', marginTop: 14, lineHeight: 16 },
+  legalConsentText: { fontSize: 11.5, color: '#918c81', textAlign: 'center', marginTop: 14, marginHorizontal: 20, lineHeight: 16 },
   legalConsentLink: { color: '#161410', fontWeight: '600', textDecorationLine: 'underline' },
   legalLinksRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 28, marginBottom: 8 },
   legalLinkText: { fontSize: 12, color: '#918c81', fontWeight: '600' },
