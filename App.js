@@ -901,6 +901,13 @@ function AppInner() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  // Honeypot: an invisible field real users never see or fill in,
+  // positioned off-screen rather than display:none (some bots skip
+  // genuinely hidden fields but still fill off-screen ones). Simple
+  // unsophisticated signup bots that blindly fill every input on the
+  // page trip this; a human never will. Not a real CAPTCHA, but a free
+  // deterrent against the common case.
+  const [honeypot, setHoneypot] = useState('');
   const [mode, setMode] = useState('login');
   // NOTE: the effect that sets mode to 'signup' on reaching the account
   // creation step lives further down, right after onboardingStep is
@@ -2022,6 +2029,14 @@ function AppInner() {
     const effectiveMode = explicitMode || mode;
     setErrorMsg('');
 
+    // Honeypot tripped -- almost certainly a bot, not a real user.
+    // Fail exactly like a normal validation error rather than telling
+    // it what was detected.
+    if ((explicitMode || mode) === 'signup' && honeypot.trim()) {
+      setErrorMsg('Something went wrong. Please try again.');
+      return;
+    }
+
     if (!email.trim() || !password) {
       setErrorMsg('Enter both an email and a password.');
       return;
@@ -2067,6 +2082,66 @@ function AppInner() {
 
   function handleLogout() {
     logoutAndClearSession();
+  }
+
+  // Self-service data export (GDPR right to access/portability), built
+  // entirely from state already loaded in this session -- no extra
+  // fetch needed. Downloads a JSON file on web; on native (not
+  // currently shipped) there's no filesystem-write story yet, so this
+  // just tells the user to email instead rather than silently failing.
+  function handleExportData() {
+    const exportPayload = {
+      exported_at: new Date().toISOString(),
+      account: {
+        email: session?.user?.email,
+        scout_mode: scoutMode,
+        scout_coins: cash,
+      },
+      holdings: holdings.map((h) => ({
+        player: h.players?.name,
+        shares: h.shares,
+        avg_buy_price: h.avg_buy_price,
+      })),
+      transactions: transactions.map((t) => ({
+        type: t.type,
+        player: t.players?.name,
+        amount: t.amount,
+        shares: t.shares,
+        price: t.price,
+        created_at: t.created_at,
+      })),
+      watchlist: watchlist.map((w) => w.players?.name).filter(Boolean),
+      journal_entries: journalEntries.map((e) => ({
+        player: e.players?.name,
+        title: e.title,
+        body: e.body,
+        conviction: e.conviction,
+        price_expectation: e.price_expectation,
+        created_at: e.created_at,
+        updated_at: e.updated_at,
+      })),
+      claimed_milestones: claimedMilestones.map((m) => m.milestone_key),
+    };
+
+    if (Platform.OS !== 'web') {
+      Alert.alert('Export your data', `Email ${session?.user?.email ? 'us' : 'masonpatto06@icloud.com'} and we'll send you a copy.`);
+      return;
+    }
+
+    try {
+      const json = JSON.stringify(exportPayload, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `scouta-data-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      Alert.alert('Could not export', 'Please email masonpatto06@icloud.com and we\'ll send you a copy directly.');
+    }
   }
 
   function handleDeleteAccount() {
@@ -2474,6 +2549,18 @@ function AppInner() {
                   secureTextEntry
                   value={password}
                   onChangeText={setPassword}
+                />
+                <TextInput
+                  style={styles.honeypotField}
+                  value={honeypot}
+                  onChangeText={setHoneypot}
+                  autoCapitalize="none"
+                  tabIndex={-1}
+                  accessibilityElementsHidden
+                  importantForAccessibility="no-hide-descendants"
+                  // Real label, intentionally off-screen rather than
+                  // display:none -- see the honeypot state comment above.
+                  placeholder="Company"
                 />
               </View>
             </View>
@@ -3504,6 +3591,9 @@ function AppInner() {
               </View>
               <Text style={styles.profMenuRowChevron}>›</Text>
             </TouchableOpacity>
+            <TouchableOpacity style={{ marginBottom: 16, alignItems: 'center' }} onPress={handleExportData}>
+              <Text style={styles.exportDataLink}>Export my data</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={[styles.buttonOutline, { marginHorizontal: 20 }]} onPress={handleLogout}>
               <Text style={styles.buttonOutlineText}>Log out</Text>
             </TouchableOpacity>
@@ -4125,6 +4215,10 @@ const styles = StyleSheet.create({
   },
   scatterAxisText: { fontSize: 10.5, color: '#918c81', fontWeight: '600' },
   logoutLink: { fontSize: 13, fontWeight: '700', color: '#c1483f' },
+  exportDataLink: { fontSize: 13, fontWeight: '700', color: '#161410', textDecorationLine: 'underline' },
+  honeypotField: {
+    position: 'absolute', left: -9999, top: -9999, width: 1, height: 1, opacity: 0,
+  },
   legalConsentText: { fontSize: 11.5, color: '#918c81', textAlign: 'center', marginTop: 14, lineHeight: 16 },
   legalConsentLink: { color: '#161410', fontWeight: '600', textDecorationLine: 'underline' },
   legalLinksRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 28, marginBottom: 8 },
