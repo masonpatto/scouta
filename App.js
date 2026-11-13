@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet, FlatList, Alert, Image, ScrollView,
   ActivityIndicator, SafeAreaView, KeyboardAvoidingView, Platform, Animated, RefreshControl, AppState,
-  Modal, useWindowDimensions,
+  Modal, useWindowDimensions, Linking,
 } from 'react-native';
 import * as Font from 'expo-font';
 import * as SecureStore from 'expo-secure-store';
@@ -29,6 +29,8 @@ Sentry.init({
 // ---------- Talking to Supabase Auth directly via fetch, no SDK needed ----------
 const SUPABASE_URL = 'https://eqflsykuoyuzbcixayjl.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVxZmxzeWt1b3l1emJjaXhheWpsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcxNjk5MzQsImV4cCI6MjEwMjc0NTkzNH0.riZeSxRDn1ZuVNfi_IRSofgjfxhSqlo8BaQNtHw2iE0';
+const PRIVACY_URL = 'https://masonpatto.github.io/scouta/privacy.html';
+const TERMS_URL = 'https://masonpatto.github.io/scouta/terms.html';
 // Real Fraunces SemiBold, subsetted to only the characters actually needed
 // (Latin letters, numbers, basic punctuation) -- shrinks a 72KB font down to
 // ~29KB, keeping the base64 payload manageable for a direct embed.
@@ -2482,6 +2484,17 @@ function AppInner() {
               disabled={submitting}
               compact
             />
+            <Text style={styles.legalConsentText}>
+              By creating an account you agree to Scouta's{' '}
+              <Text style={styles.legalConsentLink} onPress={() => Linking.openURL(TERMS_URL)}>
+                Terms of Use
+              </Text>{' '}
+              and{' '}
+              <Text style={styles.legalConsentLink} onPress={() => Linking.openURL(PRIVACY_URL)}>
+                Privacy Policy
+              </Text>
+              .
+            </Text>
           </SafeAreaView>
         </KeyboardAvoidingView>
       );
@@ -3497,6 +3510,15 @@ function AppInner() {
             <TouchableOpacity style={{ marginTop: 16, alignItems: 'center' }} onPress={handleDeleteAccount}>
               <Text style={styles.logoutLink}>Delete my account</Text>
             </TouchableOpacity>
+            <View style={styles.legalLinksRow}>
+              <Text style={styles.legalLinkText} onPress={() => Linking.openURL(TERMS_URL)}>
+                Terms of Use
+              </Text>
+              <Text style={styles.legalLinksDot}>·</Text>
+              <Text style={styles.legalLinkText} onPress={() => Linking.openURL(PRIVACY_URL)}>
+                Privacy Policy
+              </Text>
+            </View>
           </ScrollView>
         )}
 
@@ -4103,6 +4125,11 @@ const styles = StyleSheet.create({
   },
   scatterAxisText: { fontSize: 10.5, color: '#918c81', fontWeight: '600' },
   logoutLink: { fontSize: 13, fontWeight: '700', color: '#c1483f' },
+  legalConsentText: { fontSize: 11.5, color: '#918c81', textAlign: 'center', marginTop: 14, lineHeight: 16 },
+  legalConsentLink: { color: '#161410', fontWeight: '600', textDecorationLine: 'underline' },
+  legalLinksRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 28, marginBottom: 8 },
+  legalLinkText: { fontSize: 12, color: '#918c81', fontWeight: '600' },
+  legalLinksDot: { fontSize: 12, color: '#c4bdac' },
   playerRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: '#161518', borderRadius: 22, paddingVertical: 14, paddingHorizontal: 16,
