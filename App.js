@@ -387,10 +387,10 @@ const QUIZ_QUESTIONS = [
     kicker: 'LAST ONE', counter: '04',
     question: 'Which discovery would satisfy you more?',
     options: [
-      { text: 'Spotting the next global superstar first', trait: 'spotter' },
-      { text: 'Finding the gem everyone else missed', trait: 'contrarian' },
-      { text: 'Turning raw talent into a real prospect', trait: 'instinct' },
-      { text: 'Filling a gap nobody else spotted', trait: 'analytical' },
+      { text: 'Uncovering an overlooked talent', trait: 'spotter' },
+      { text: "Predicting a superstar's rise", trait: 'contrarian' },
+      { text: 'Identifying a perfect tactical fit', trait: 'instinct' },
+      { text: 'Seeing through the hype', trait: 'analytical' },
     ],
   },
 ];
