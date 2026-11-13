@@ -11,13 +11,19 @@
 //   later and this job picks them up on its next run with no code
 //   change.
 // - Insert-or-update via the upsert_sportmonks_player RPC (migration
-//   0010), matched on players.api_player_id. On first insert,
-//   current_price is seeded from rating (rating * 2, floor 10 SC) as a
-//   reasoned starting point -- exactly like Phase 1's weights, not
-//   empirically tuned. On every later run, current_price is left
-//   untouched; this job only ever refreshes roster/rating metadata,
-//   matching the FPL sync's philosophy that price only moves for a
-//   specific reason, never silently alongside an unrelated refresh.
+//   0010; price engine added in migration 0017), matched on
+//   players.api_player_id. On first insert, current_price is seeded
+//   from rating (rating * 2, floor 10 SC) as a reasoned starting point.
+//   On every later run, the RPC itself (not this function) compares
+//   the freshly-computed rating against the player's stored
+//   price_basis_rating and nudges current_price when it's genuinely
+//   moved -- replacing the old Premier-League-only FPL price sync
+//   (migration 0017's own header has the detail) with one mechanism
+//   that covers every subscribed league uniformly, since this job
+//   already visits all of them. CURATED_RATINGS names are the one
+//   exception: their rating is a dated snapshot, not continuously
+//   recomputed, so their price only moves again when that dataset is
+//   next refreshed.
 // - position_id / detailed_position_id are decoded via a small hardcoded
 //   table (only 16 values total, documented at
 //   https://docs.sportmonks.com/v3/definitions/types/position-types),

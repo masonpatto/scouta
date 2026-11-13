@@ -1,3 +1,12 @@
+// RETIRED (2026-11-13), kept only for history -- do not deploy this.
+// It was never actually connected (players.fpl_id was never populated,
+// so it had nothing to match against and never ran successfully), and
+// its DB-side counterpart (apply_player_sync) has been deleted and is
+// deliberately not being recreated. Replaced by migration 0017's price
+// engine, built on sync-sportmonks-players instead: same idea (move
+// price on real evidence, hard-capped, never silently), but covering
+// every subscribed league uniformly rather than Premier League only.
+//
 // Scouta market engine, Phase 1: Premier League prices driven by the free
 // Fantasy Premier League API (no key required). Runs daily via pg_cron
 // (see the cron setup SQL in docs/market-engine.md).
