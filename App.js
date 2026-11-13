@@ -523,6 +523,52 @@ function BuyChip({ label, active, disabled, style, onPress }) {
   );
 }
 
+// A real trading-card flip, not a tap-to-expand accordion -- a colour
+// block + icon on the front, the actual point on the back, so reading
+// it is a small discovery rather than a wall of onboarding copy. Two
+// faces share one rotateY: the front sits at 0->180deg, the back at a
+// permanent +180 offset (180->360), so it's already upside-down until
+// the shared rotation brings it the rest of the way round --
+// backfaceVisibility hides whichever face is pointed away from the
+// viewer at any given angle, which is what makes it read as one card
+// flipping rather than two cards cross-fading.
+function FlipCard({ color, icon, frontLabel, backText }) {
+  const flipAnim = useRef(new Animated.Value(0)).current;
+  const [flipped, setFlipped] = useState(false);
+
+  function toggleFlip() {
+    Animated.spring(flipAnim, {
+      toValue: flipped ? 0 : 180,
+      friction: 8,
+      tension: 10,
+      useNativeDriver: true,
+    }).start();
+    setFlipped(!flipped);
+  }
+
+  const frontRotate = flipAnim.interpolate({ inputRange: [0, 180], outputRange: ['0deg', '180deg'] });
+  const backRotate = flipAnim.interpolate({ inputRange: [0, 180], outputRange: ['180deg', '360deg'] });
+
+  return (
+    <PressScale onPress={toggleFlip} viewStyle={styles.flipCardWrap} style={styles.flipCardTouchable}>
+      <Animated.View style={[styles.flipCardFace, { backgroundColor: color, transform: [{ perspective: 800 }, { rotateY: frontRotate }] }]}>
+        <Feather name={icon} size={26} color="#faf9f6" />
+        <Text style={styles.flipCardFrontLabel}>{frontLabel}</Text>
+        <Text style={styles.flipCardTapHint}>tap to reveal</Text>
+      </Animated.View>
+      <Animated.View
+        style={[
+          styles.flipCardFace,
+          styles.flipCardBack,
+          { backgroundColor: color, transform: [{ perspective: 800 }, { rotateY: backRotate }] },
+        ]}
+      >
+        <Text style={styles.flipCardBackText}>{backText}</Text>
+      </Animated.View>
+    </PressScale>
+  );
+}
+
 // Slides the buy sheet up from the bottom edge rather than fading in
 // as a centred dialog -- reads as a native bottom sheet, which is the
 // more familiar "exciting trade" pattern (Robinhood/Coinbase-style)
@@ -2249,38 +2295,21 @@ function AppInner() {
   // Shared between the onboarding "How to Play" step and the same
   // content reopened from Profile later -- one source, so the two
   // never drift apart. Plain function returning JSX (not a component),
-  // called inline -- no hooks of its own, nothing to remount.
-  const HOW_TO_PLAY_CARDS = [
-    {
-      icon: 'search',
-      title: 'Scout the talent',
-      desc: 'Browse real footballers across 5 leagues. Ratings are driven by actual match evidence, not a fixed list — the same name can be worth more or less next week.',
-    },
-    {
-      icon: 'trending-up',
-      title: 'Invest your Scout Coins',
-      desc: 'Buy a stake in anyone you believe in. Prices move on real rating changes and real buy/sell pressure from other scouts — genuinely, not just for show.',
-    },
-    {
-      icon: 'award',
-      title: 'Grow your portfolio, climb the board',
-      desc: 'Sell for a profit when you’re right, hold when you’re not finished yet. Your portfolio value is what ranks you on the Leaders tab.',
-    },
+  // called inline -- no hooks of its own, nothing to remount. Each
+  // FlipCard below IS its own component (it needs its own flipped
+  // state and Animated.Value per card), used as a JSX tag for that
+  // reason -- never called as a plain function like this one.
+  const FLIP_CARD_DATA = [
+    { color: '#c9922e', icon: 'search', frontLabel: 'SCOUT', backText: 'Browse real footballers. Ratings & prices move with real performances.' },
+    { color: '#2f8f5b', icon: 'trending-up', frontLabel: 'INVEST', backText: 'Buy a stake in anyone you believe in. Your call, your style.' },
+    { color: '#7a5aa0', icon: 'award', frontLabel: 'COMPETE', backText: 'Climb the leaderboard. Prove you’ve got the better long-term eye.' },
   ];
 
   function howToPlayCards() {
     return (
-      <View style={{ marginTop: 10 }}>
-        {HOW_TO_PLAY_CARDS.map((c) => (
-          <View key={c.title} style={styles.htpCard}>
-            <View style={styles.htpIconWrap}>
-              <Feather name={c.icon} size={20} color="#161410" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.htpCardTitle}>{c.title}</Text>
-              <Text style={styles.htpCardDesc}>{c.desc}</Text>
-            </View>
-          </View>
+      <View style={styles.flipCardRow}>
+        {FLIP_CARD_DATA.map((c) => (
+          <FlipCard key={c.frontLabel} {...c} />
         ))}
       </View>
     );
@@ -4185,18 +4214,28 @@ const styles = StyleSheet.create({
   capText: { fontSize: 11.5, color: '#918c81' },
   capTextFull: { color: '#c1483f', fontWeight: '700' },
   capExceedsText: { fontSize: 12, color: '#c1483f', marginBottom: 6 },
-  htpCard: {
-    flexDirection: 'row', gap: 14, alignItems: 'flex-start',
-    backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e8e3d8', borderRadius: 16,
-    padding: 14, marginBottom: 10,
+  htpModalTitle: { fontSize: 20, fontWeight: '800', color: '#161410', marginBottom: 14 },
+  flipCardRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
+  flipCardWrap: { flex: 1, height: 168, borderRadius: 18 },
+  flipCardTouchable: { flex: 1 },
+  flipCardFace: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 10, backfaceVisibility: 'hidden',
+    shadowColor: '#161410', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.18, shadowRadius: 10, elevation: 3,
   },
-  htpIconWrap: {
-    width: 40, height: 40, borderRadius: 12, backgroundColor: '#f1dfd4',
-    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  flipCardBack: {},
+  flipCardFrontLabel: {
+    fontSize: 13, fontWeight: '800', color: '#faf9f6', letterSpacing: 1,
+    marginTop: 10, textAlign: 'center',
   },
-  htpCardTitle: { fontSize: 14.5, fontWeight: '700', color: '#161410', marginBottom: 3 },
-  htpCardDesc: { fontSize: 12.5, color: '#5c574c', lineHeight: 17 },
-  htpModalTitle: { fontSize: 20, fontWeight: '800', color: '#161410', marginBottom: 6 },
+  flipCardTapHint: {
+    fontSize: 9.5, fontWeight: '600', color: 'rgba(250,249,246,0.65)',
+    marginTop: 6, textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.5,
+  },
+  flipCardBackText: {
+    fontSize: 11.5, fontWeight: '600', color: '#faf9f6', lineHeight: 15.5, textAlign: 'center',
+  },
   buyPriceMain: { fontSize: 22, fontWeight: '800', color: '#161410' },
   buyPriceSuffix: { fontSize: 13, fontWeight: '600', color: '#8a8578' },
   buyAmountLabel: { fontSize: 12, fontWeight: '700', color: '#918c81', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
