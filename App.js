@@ -1170,6 +1170,7 @@ function AppInner() {
   // real trading app's single highest-frequency action deserves more than
   // a bare text field.
   const [buyModalPlayer, setBuyModalPlayer] = useState(null);
+  const [buyInvestorCount, setBuyInvestorCount] = useState(null);
   const [buyAmount, setBuyAmount] = useState('');
   const [buySuccessInfo, setBuySuccessInfo] = useState(null);
   const [sellModalHolding, setSellModalHolding] = useState(null);
@@ -1638,6 +1639,13 @@ function AppInner() {
                     </Text>
                     <Text style={styles.buyPriceSuffix}> SC / share</Text>
                   </View>
+                  {buyInvestorCount !== null ? (
+                    <Text style={styles.buyInvestorText}>
+                      {buyInvestorCount === 0
+                        ? 'No investors yet — be the first'
+                        : `${buyInvestorCount} investor${buyInvestorCount === 1 ? '' : 's'} hold this player`}
+                    </Text>
+                  ) : null}
 
                   <Text style={styles.buyAmountLabel}>Invest</Text>
                   <View style={styles.buyChipsRow}>
@@ -1745,7 +1753,7 @@ function AppInner() {
                   </View>
                   <Text style={styles.buyPlayerName}>{player?.name}</Text>
                   <Text style={styles.buyPlayerSub}>{[player?.position, player?.club].filter(Boolean).join(' · ')}</Text>
-                  <View style={styles.buyPriceRow}>
+                  <View style={[styles.buyPriceRow, { marginBottom: 18 }]}>
                     <Text style={styles.buyPriceMain}>
                       {player?.current_price != null ? Math.round(player.current_price).toLocaleString('en-US') : '—'}
                     </Text>
@@ -2118,7 +2126,13 @@ function AppInner() {
   function handleBuy(player) {
     setBuyAmount('');
     setBuySuccessInfo(null);
+    setBuyInvestorCount(null);
     setBuyModalPlayer(player);
+    // Fire-and-forget: the sheet renders immediately without waiting on
+    // this, the investor line just fills in a beat later once it lands.
+    callRpc('player_investor_count', { p_player_id: player.id })
+      .then((count) => setBuyInvestorCount(typeof count === 'number' ? count : 0))
+      .catch(() => setBuyInvestorCount(0));
   }
 
   async function submitBuy(amountOverride) {
@@ -4028,7 +4042,8 @@ const styles = StyleSheet.create({
   buyRatingLabel: { fontSize: 9, fontWeight: '700', color: '#918c81', letterSpacing: 1 },
   buyPlayerName: { fontSize: 20, fontWeight: '800', color: '#161410', letterSpacing: -0.3 },
   buyPlayerSub: { fontSize: 13, color: '#8a8578', marginTop: 2, marginBottom: 10 },
-  buyPriceRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 18 },
+  buyPriceRow: { flexDirection: 'row', alignItems: 'baseline', marginBottom: 6 },
+  buyInvestorText: { fontSize: 12, color: '#918c81', marginBottom: 14 },
   buyPriceMain: { fontSize: 22, fontWeight: '800', color: '#161410' },
   buyPriceSuffix: { fontSize: 13, fontWeight: '600', color: '#8a8578' },
   buyAmountLabel: { fontSize: 12, fontWeight: '700', color: '#918c81', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
