@@ -1175,6 +1175,7 @@ function AppInner() {
   const [buyAmount, setBuyAmount] = useState('');
   const [buySuccessInfo, setBuySuccessInfo] = useState(null);
   const [sellModalHolding, setSellModalHolding] = useState(null);
+  const [howToPlayOpen, setHowToPlayOpen] = useState(false);
   const [sellAmount, setSellAmount] = useState('');
   const [sellSuccessInfo, setSellSuccessInfo] = useState(null);
 
@@ -2245,6 +2246,68 @@ function AppInner() {
     setJournalOpen(true);
   }
 
+  // Shared between the onboarding "How to Play" step and the same
+  // content reopened from Profile later -- one source, so the two
+  // never drift apart. Plain function returning JSX (not a component),
+  // called inline -- no hooks of its own, nothing to remount.
+  const HOW_TO_PLAY_CARDS = [
+    {
+      icon: 'search',
+      title: 'Scout the talent',
+      desc: 'Browse real footballers across 5 leagues. Ratings are driven by actual match evidence, not a fixed list — the same name can be worth more or less next week.',
+    },
+    {
+      icon: 'trending-up',
+      title: 'Invest your Scout Coins',
+      desc: 'Buy a stake in anyone you believe in. Prices move on real rating changes and real buy/sell pressure from other scouts — genuinely, not just for show.',
+    },
+    {
+      icon: 'award',
+      title: 'Grow your portfolio, climb the board',
+      desc: 'Sell for a profit when you’re right, hold when you’re not finished yet. Your portfolio value is what ranks you on the Leaders tab.',
+    },
+  ];
+
+  function howToPlayCards() {
+    return (
+      <View style={{ marginTop: 10 }}>
+        {HOW_TO_PLAY_CARDS.map((c) => (
+          <View key={c.title} style={styles.htpCard}>
+            <View style={styles.htpIconWrap}>
+              <Feather name={c.icon} size={20} color="#161410" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.htpCardTitle}>{c.title}</Text>
+              <Text style={styles.htpCardDesc}>{c.desc}</Text>
+            </View>
+          </View>
+        ))}
+      </View>
+    );
+  }
+
+  function HowToPlayModalRenderer() {
+    if (!howToPlayOpen) return null;
+    return (
+      <Modal visible transparent animationType="fade" onRequestClose={() => setHowToPlayOpen(false)}>
+        <View style={styles.buySheetBackdrop}>
+          <SheetEntrance>
+            <View style={styles.buyCard}>
+              <View style={styles.buySheetHandle} />
+              <Text style={styles.htpModalTitle}>How to play</Text>
+              {howToPlayCards()}
+              <View style={{ marginTop: 18 }}>
+                <PressScale style={styles.promptSubmitBtn} onPress={() => setHowToPlayOpen(false)}>
+                  <Text style={styles.promptSubmitText}>Got it</Text>
+                </PressScale>
+              </View>
+            </View>
+          </SheetEntrance>
+        </View>
+      </Modal>
+    );
+  }
+
   async function fetchPlayers() {
     setPlayersLoading(true);
     setPlayersError('');
@@ -2552,7 +2615,7 @@ function AppInner() {
   // mockup's order (quiz/archetype/score happen first, signup is embedded
   // as its own step partway through, not a separate gate in front of everything) ----------
   if (!onboardingComplete) {
-    const totalSteps = 10; // welcome, mode, 4 quiz, archetype, potential, account, capital, mission
+    const totalSteps = 11; // welcome, mode, 4 quiz, archetype, potential, account, capital, how-to-play, mission
     const progressDots = Array.from({ length: totalSteps }, (_, i) => i <= onboardingStep);
 
     function ProgressBar() {
@@ -2929,7 +2992,26 @@ function AppInner() {
       );
     }
 
-    // ---------- Step 10: First mission ----------
+    // ---------- Step 10: How to Play ----------
+    // Same content also renders from Profile (HowToPlayModalRenderer
+    // below) via howToPlayCards() -- one shared source so the two never
+    // drift apart.
+    if (onboardingStep === 10) {
+      return (
+        <SafeAreaView style={styles.heroScreen}>
+          <Atmosphere />
+          <ProgressBar />
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <Text style={[styles.heroKicker, { textAlign: 'left', marginLeft: 22 }]}>ONE MORE THING</Text>
+            <Text style={styles.quizQuestionText}>How to play</Text>
+            {howToPlayCards()}
+          </View>
+          <PrimaryButton label="Got it" onPress={() => setOnboardingStep(11)} compact />
+        </SafeAreaView>
+      );
+    }
+
+    // ---------- Step 11: First mission ----------
     const MISSIONS = {
       casual: { title: 'Find your first prospect.', desc: 'Discover a player you think the world is overlooking.' },
       professional: { title: 'Identify your first shortlist candidate.', desc: 'Find a player worth building a scouting report around.' },
@@ -3868,6 +3950,16 @@ function AppInner() {
             </View>
             <TouchableOpacity
               style={styles.profMenuRow}
+              onPress={() => setHowToPlayOpen(true)}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.profMenuRowTitle}>How to Play</Text>
+                <Text style={styles.profMenuRowSub}>The aim, and how prices actually move</Text>
+              </View>
+              <Text style={styles.profMenuRowChevron}>›</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.profMenuRow}
               onPress={() => { setJournalPlayerFilter(null); setJournalOpen(true); }}
             >
               <View style={{ flex: 1 }}>
@@ -3965,6 +4057,7 @@ function AppInner() {
         <PromptModalRenderer />
         {BuyModalRenderer()}
         {SellModalRenderer()}
+        {HowToPlayModalRenderer()}
         {JournalRenderer()}
         {JournalPickerRenderer()}
         {JournalEditorRenderer()}
@@ -4092,6 +4185,18 @@ const styles = StyleSheet.create({
   capText: { fontSize: 11.5, color: '#918c81' },
   capTextFull: { color: '#c1483f', fontWeight: '700' },
   capExceedsText: { fontSize: 12, color: '#c1483f', marginBottom: 6 },
+  htpCard: {
+    flexDirection: 'row', gap: 14, alignItems: 'flex-start',
+    backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#e8e3d8', borderRadius: 16,
+    padding: 14, marginBottom: 10,
+  },
+  htpIconWrap: {
+    width: 40, height: 40, borderRadius: 12, backgroundColor: '#f1dfd4',
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  htpCardTitle: { fontSize: 14.5, fontWeight: '700', color: '#161410', marginBottom: 3 },
+  htpCardDesc: { fontSize: 12.5, color: '#5c574c', lineHeight: 17 },
+  htpModalTitle: { fontSize: 20, fontWeight: '800', color: '#161410', marginBottom: 6 },
   buyPriceMain: { fontSize: 22, fontWeight: '800', color: '#161410' },
   buyPriceSuffix: { fontSize: 13, fontWeight: '600', color: '#8a8578' },
   buyAmountLabel: { fontSize: 12, fontWeight: '700', color: '#918c81', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
