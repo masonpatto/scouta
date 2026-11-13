@@ -119,6 +119,11 @@ const TIER_BG_URIS = {
 // Quick-pick amounts for the Buy modal, scaled to the 1,000 SC starting
 // capital rather than arbitrary round numbers.
 const BUY_AMOUNT_PRESETS = [25, 50, 100, 250];
+// Sell modal presets are a % of the position's current value rather than
+// fixed SC amounts -- a holding can be worth 9 SC or 900 SC, so a fixed
+// preset list (like Buy's) wouldn't fit most positions. "Sell All" plays
+// the same role as Buy's "All In" chip.
+const SELL_PERCENT_PRESETS = [25, 50, 75];
 
 const TIERS = {
   elite:    { bg: 'elite',    label: 'ELITE',    accent: '#e2c47c', text: '#f5f2ec', dim: 'rgba(245,242,236,0.5)',  border: 'rgba(226,196,124,0.35)', gain: '#6fcf97' },
@@ -635,6 +640,98 @@ function BuySuccessView({ info, onDone, onViewPortfolio }) {
   );
 }
 
+// Same entrance/count-up treatment as BuySuccessView, shown once a sale
+// goes through -- shares sold and SC received count up together, then a
+// realized P/L line (the one thing Buy never needs, since you can't lose
+// money at the moment you invest it) colored green/red same as everywhere
+// else in the app a gain/loss is shown.
+function SellSuccessView({ info, onDone, onViewPortfolio }) {
+  const scaleAnim = useRef(new Animated.Value(0.7)).current;
+  const opacityAnim = useRef(new Animated.Value(0)).current;
+  const sweep = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(1)).current;
+  const [displayShares, setDisplayShares] = useState(0);
+  const [displayProceeds, setDisplayProceeds] = useState(0);
+
+  useEffect(() => {
+    Animated.spring(scaleAnim, { toValue: 1, friction: 6, tension: 80, useNativeDriver: true }).start(() => {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulse, { toValue: 1.06, duration: 1100, useNativeDriver: true }),
+          Animated.timing(pulse, { toValue: 1, duration: 1100, useNativeDriver: true }),
+        ])
+      ).start();
+    });
+    Animated.timing(opacityAnim, { toValue: 1, duration: 220, useNativeDriver: true }).start();
+
+    const sweepLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(sweep, { toValue: 1, duration: 1400, useNativeDriver: true }),
+        Animated.delay(900),
+      ])
+    );
+    sweepLoop.start();
+
+    const duration = 700;
+    const start = Date.now();
+    let raf;
+    const tick = () => {
+      const t = Math.min(1, (Date.now() - start) / duration);
+      const eased = 1 - Math.pow(1 - t, 3);
+      setDisplayShares(info.shares * eased);
+      setDisplayProceeds(info.netProceeds * eased);
+      if (t < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+
+    return () => {
+      sweepLoop.stop();
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
+
+  const sweepTranslate = sweep.interpolate({ inputRange: [0, 1], outputRange: [-120, 220] });
+  const plColor = info.realizedPl >= 0 ? '#2f8f5b' : '#c1483f';
+
+  return (
+    <Animated.View style={{ opacity: opacityAnim, transform: [{ scale: scaleAnim }] }}>
+      <View style={styles.buySuccessBadgeWrap}>
+        <Animated.View style={[styles.buySuccessBadge, { transform: [{ scale: pulse }] }]}>
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.shine, { transform: [{ translateX: sweepTranslate }, { rotate: '20deg' }] }]}
+          />
+          <Text style={styles.buySuccessCheck}>✓</Text>
+        </Animated.View>
+      </View>
+      <Text style={styles.buySuccessTitle}>Sold from your portfolio</Text>
+      <Text style={styles.buySuccessPlayer}>{info.playerName}</Text>
+      <View style={styles.buySuccessStatsRow}>
+        <View style={styles.buySuccessStat}>
+          <Text style={styles.buySuccessStatValue}>{displayShares.toFixed(2)}</Text>
+          <Text style={styles.buySuccessStatLabel}>SHARES SOLD</Text>
+        </View>
+        <View style={styles.buySuccessStatDivider} />
+        <View style={styles.buySuccessStat}>
+          <Text style={styles.buySuccessStatValue}>{Math.round(displayProceeds)}</Text>
+          <Text style={styles.buySuccessStatLabel}>SC RECEIVED</Text>
+        </View>
+      </View>
+      <Text style={[styles.buyPreviewText, { textAlign: 'center', fontWeight: '700', marginBottom: 20, color: plColor }]}>
+        {info.realizedPl >= 0 ? '+' : ''}{info.realizedPl.toFixed(2)} SC {info.realizedPl >= 0 ? 'profit' : 'loss'}
+      </Text>
+      <View style={styles.promptButtonRow}>
+        <PressScale viewStyle={{ flex: 1 }} style={styles.promptCancelBtn} onPress={onDone}>
+          <Text style={styles.promptCancelText}>Done</Text>
+        </PressScale>
+        <PressScale viewStyle={{ flex: 1 }} style={styles.promptSubmitBtn} onPress={onViewPortfolio}>
+          <Text style={styles.promptSubmitText}>View Portfolio</Text>
+        </PressScale>
+      </View>
+    </Animated.View>
+  );
+}
+
 // ---------- Web-only presentation: a centred "app card" on wide browser
 // windows, instead of the phone layout stretching edge-to-edge. A no-op
 // on native -- WebFrame renders children untouched there.
@@ -1075,6 +1172,9 @@ function AppInner() {
   const [buyModalPlayer, setBuyModalPlayer] = useState(null);
   const [buyAmount, setBuyAmount] = useState('');
   const [buySuccessInfo, setBuySuccessInfo] = useState(null);
+  const [sellModalHolding, setSellModalHolding] = useState(null);
+  const [sellAmount, setSellAmount] = useState('');
+  const [sellSuccessInfo, setSellSuccessInfo] = useState(null);
 
   // Scout Journal: a real chronological history of investment theses
   // per player (title, freeform body, conviction, price target), not
@@ -1601,6 +1701,124 @@ function AppInner() {
       </Modal>
     );
   }
+
+  // Same reasoning as BuyModalRenderer above for why this is called as a
+  // plain function ({SellModalRenderer()}), never as a JSX tag.
+  function SellModalRenderer() {
+    if (!sellModalHolding) return null;
+    const holding = sellModalHolding;
+    const player = holding.players;
+    const positionValue = Math.round((holding.shares * (player?.current_price || 0)) * 100) / 100;
+    const amountNum = parseFloat(sellAmount) || 0;
+    const fee = Math.round(amountNum * 0.02 * 100) / 100;
+    const sharesPreview = player?.current_price > 0 ? Math.min(holding.shares, amountNum / player.current_price) : 0;
+    const canSubmit = amountNum > 0 && !actionBusy;
+
+    function closeModal() {
+      setSellModalHolding(null);
+      setSellSuccessInfo(null);
+    }
+
+    return (
+      <Modal visible transparent animationType="fade" onRequestClose={closeModal}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.buySheetBackdrop}
+        >
+          <SheetEntrance>
+            <View style={styles.buyCard}>
+              <View style={styles.buySheetHandle} />
+              {sellSuccessInfo ? (
+                <SellSuccessView
+                  info={sellSuccessInfo}
+                  onDone={closeModal}
+                  onViewPortfolio={() => { closeModal(); setCurrentTab('portfolio'); }}
+                />
+              ) : (
+                <>
+                  <View style={styles.buyCardHeader}>
+                    <ChipIcon />
+                    <View style={styles.ratingBadge}>
+                      <Text style={styles.buyRatingNumber}>{player?.rating || '—'}</Text>
+                      <Text style={styles.buyRatingLabel}>RATING</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.buyPlayerName}>{player?.name}</Text>
+                  <Text style={styles.buyPlayerSub}>{[player?.position, player?.club].filter(Boolean).join(' · ')}</Text>
+                  <View style={styles.buyPriceRow}>
+                    <Text style={styles.buyPriceMain}>
+                      {player?.current_price != null ? Math.round(player.current_price).toLocaleString('en-US') : '—'}
+                    </Text>
+                    <Text style={styles.buyPriceSuffix}> SC / share</Text>
+                  </View>
+
+                  <Text style={styles.buyAmountLabel}>Sell</Text>
+                  <View style={styles.buyChipsRow}>
+                    {SELL_PERCENT_PRESETS.map((pct) => {
+                      const chipValue = Math.round(positionValue * (pct / 100) * 100) / 100;
+                      return (
+                        <BuyChip
+                          key={pct}
+                          label={`${pct}%`}
+                          active={amountNum > 0 && Math.abs(amountNum - chipValue) < 0.01}
+                          disabled={positionValue <= 0}
+                          onPress={() => setSellAmount(String(chipValue))}
+                        />
+                      );
+                    })}
+                    <BuyChip
+                      label="Sell All"
+                      style={styles.buyChipMax}
+                      active={amountNum > 0 && amountNum >= positionValue - 0.01}
+                      disabled={positionValue <= 0}
+                      onPress={() => setSellAmount(String(positionValue))}
+                    />
+                  </View>
+
+                  <View style={styles.buyCustomInputWrap}>
+                    <TextInput
+                      style={styles.buyCustomInput}
+                      value={sellAmount}
+                      onChangeText={setSellAmount}
+                      keyboardType="numeric"
+                      placeholder="Custom amount"
+                      placeholderTextColor="#b4ad9c"
+                    />
+                    <Text style={styles.buyCustomInputSuffix}>SC</Text>
+                  </View>
+
+                  {amountNum > 0 ? (
+                    <View style={styles.buyPreviewRow}>
+                      <Text style={styles.buyPreviewText}>≈ {sharesPreview.toFixed(2)} shares</Text>
+                      <Text style={styles.buyPreviewText}>Fee {fee.toFixed(2)} SC</Text>
+                    </View>
+                  ) : null}
+
+                  <Text style={styles.buyAvailableText}>
+                    You own: {holding.shares.toFixed(2)} shares · {formatSC(positionValue, 2)}
+                  </Text>
+
+                  <View style={styles.promptButtonRow}>
+                    <PressScale viewStyle={{ flex: 1 }} style={styles.promptCancelBtn} onPress={closeModal}>
+                      <Text style={styles.promptCancelText}>Cancel</Text>
+                    </PressScale>
+                    <PressScale
+                      viewStyle={{ flex: 1 }}
+                      style={[styles.promptSubmitBtn, !canSubmit && styles.heroButtonDisabled]}
+                      onPress={() => submitSell()}
+                      disabled={!canSubmit}
+                    >
+                      <Text style={styles.promptSubmitText}>{actionBusy ? 'Selling…' : 'Sell'}</Text>
+                    </PressScale>
+                  </View>
+                </>
+              )}
+            </View>
+          </SheetEntrance>
+        </KeyboardAvoidingView>
+      </Modal>
+    );
+  }
   const [leaderboard, setLeaderboard] = useState([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [claimedMilestones, setClaimedMilestones] = useState([]);
@@ -1927,36 +2145,46 @@ function AppInner() {
     }
   }
 
-  async function handleSell(holding) {
-    showPrompt({
-      title: `Sell ${holding.players.name}`,
-      message: `You own ${holding.shares.toFixed(2)} shares. How many would you like to sell?`,
-      defaultValue: String(holding.shares),
-      keyboardType: 'numeric',
-      submitLabel: 'Sell',
-      onSubmit: async (input) => {
-        const shares = parseFloat(input);
-        if (!shares || shares <= 0) return;
-        setActionBusy(true);
-        try {
-          const result = await callRpc('sell_player', { p_player_id: holding.players.id, p_shares: shares });
-          if (!result.ok) {
-            Alert.alert('Could not sell', result.reason);
-          } else {
-            const pl = result.realized_pl >= 0
-              ? `profit of ${result.realized_pl.toFixed(2)} SC`
-              : `loss of ${Math.abs(result.realized_pl).toFixed(2)} SC`;
-            Alert.alert('Sold', `Sold for a ${pl}.`);
-            logEvent('sell_player', { player_id: holding.players.id, shares, realized_pl: result.realized_pl });
-            await Promise.all([fetchCash(), fetchHoldings(), fetchTransactions()]);
-          }
-        } catch (e) {
-          Alert.alert('Error', e.message);
-        } finally {
-          setActionBusy(false);
-        }
-      },
-    });
+  function handleSell(holding) {
+    setSellAmount('');
+    setSellSuccessInfo(null);
+    setSellModalHolding(holding);
+  }
+
+  async function submitSell(amountOverride) {
+    const holding = sellModalHolding;
+    const player = holding?.players;
+    const raw = amountOverride !== undefined ? amountOverride : parseFloat(sellAmount);
+    const amount = Math.round(raw * 100) / 100;
+    if (!holding || !player || !amount || amount <= 0) return;
+    const positionValue = Math.round(holding.shares * player.current_price * 100) / 100;
+    // Selling the full (or near-full, after rounding the preview amount)
+    // position sends the exact share count on record, not an amount/price
+    // division that could leave a dust remainder behind.
+    const sharesToSell = amount >= positionValue - 0.01
+      ? holding.shares
+      : (player.current_price > 0 ? Math.min(holding.shares, amount / player.current_price) : 0);
+    if (!sharesToSell || sharesToSell <= 0) return;
+    setActionBusy(true);
+    try {
+      const result = await callRpc('sell_player', { p_player_id: player.id, p_shares: sharesToSell });
+      if (!result.ok) {
+        Alert.alert('Could not sell', result.reason);
+      } else {
+        setSellSuccessInfo({
+          playerName: player.name,
+          shares: sharesToSell,
+          netProceeds: result.net_proceeds,
+          realizedPl: result.realized_pl,
+        });
+        logEvent('sell_player', { player_id: player.id, shares: sharesToSell, realized_pl: result.realized_pl });
+        await Promise.all([fetchCash(), fetchHoldings(), fetchTransactions()]);
+      }
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    } finally {
+      setActionBusy(false);
+    }
   }
 
   function openPlayerJournal(player) {
@@ -3677,6 +3905,7 @@ function AppInner() {
         </Modal>
         <PromptModalRenderer />
         {BuyModalRenderer()}
+        {SellModalRenderer()}
         {JournalRenderer()}
         {JournalPickerRenderer()}
         {JournalEditorRenderer()}
