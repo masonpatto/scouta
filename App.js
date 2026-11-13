@@ -532,7 +532,7 @@ function BuyChip({ label, active, disabled, style, onPress }) {
 // backfaceVisibility hides whichever face is pointed away from the
 // viewer at any given angle, which is what makes it read as one card
 // flipping rather than two cards cross-fading.
-function FlipCard({ color, icon, frontLabel, backText }) {
+function FlipCard({ color, bg, icon, frontLabel, backText }) {
   const flipAnim = useRef(new Animated.Value(0)).current;
   const [flipped, setFlipped] = useState(false);
 
@@ -551,18 +551,21 @@ function FlipCard({ color, icon, frontLabel, backText }) {
 
   return (
     <PressScale onPress={toggleFlip} viewStyle={styles.flipCardWrap} style={styles.flipCardTouchable}>
-      <Animated.View style={[styles.flipCardFace, { backgroundColor: color, transform: [{ perspective: 800 }, { rotateY: frontRotate }] }]}>
-        <Feather name={icon} size={26} color="#faf9f6" />
-        <Text style={styles.flipCardFrontLabel}>{frontLabel}</Text>
+      <Animated.View style={[styles.flipCardFace, { backgroundColor: bg, borderColor: color }, { transform: [{ perspective: 800 }, { rotateY: frontRotate }] }]}>
+        <View style={[styles.flipCardIconWrap, { backgroundColor: color }]}>
+          <Feather name={icon} size={17} color="#faf9f6" />
+        </View>
+        <Text style={[styles.flipCardFrontLabel, { color }]}>{frontLabel}</Text>
         <Text style={styles.flipCardTapHint}>tap to reveal</Text>
       </Animated.View>
       <Animated.View
         style={[
           styles.flipCardFace,
-          styles.flipCardBack,
-          { backgroundColor: color, transform: [{ perspective: 800 }, { rotateY: backRotate }] },
+          { backgroundColor: bg, borderColor: color },
+          { transform: [{ perspective: 800 }, { rotateY: backRotate }] },
         ]}
       >
+        <View style={[styles.flipCardBackBar, { backgroundColor: color }]} />
         <Text style={styles.flipCardBackText}>{backText}</Text>
       </Animated.View>
     </PressScale>
@@ -2300,9 +2303,9 @@ function AppInner() {
   // state and Animated.Value per card), used as a JSX tag for that
   // reason -- never called as a plain function like this one.
   const FLIP_CARD_DATA = [
-    { color: '#c9922e', icon: 'search', frontLabel: 'SCOUT', backText: 'Browse real footballers. Ratings & prices move with real performances.' },
-    { color: '#2f8f5b', icon: 'trending-up', frontLabel: 'INVEST', backText: 'Buy a stake in anyone you believe in. Your call, your style.' },
-    { color: '#7a5aa0', icon: 'award', frontLabel: 'COMPETE', backText: 'Climb the leaderboard. Prove you’ve got the better long-term eye.' },
+    { color: '#c9922e', bg: '#faf3e3', icon: 'search', frontLabel: 'SCOUT', backText: 'Ratings & prices move with real performances.' },
+    { color: '#2f8f5b', bg: '#e9f5ef', icon: 'trending-up', frontLabel: 'INVEST', backText: 'Back anyone you believe in. Your call, your style.' },
+    { color: '#7a5aa0', bg: '#f1ecf7', icon: 'award', frontLabel: 'COMPETE', backText: 'Climb the board. Prove you’ve got the eye.' },
   ];
 
   function howToPlayCards() {
@@ -3031,8 +3034,8 @@ function AppInner() {
           <Atmosphere />
           <ProgressBar />
           <View style={{ flex: 1, justifyContent: 'center' }}>
-            <Text style={[styles.heroKicker, { textAlign: 'left', marginLeft: 22 }]}>ONE MORE THING</Text>
-            <Text style={styles.quizQuestionText}>How to play</Text>
+            <Text style={styles.heroKicker}>ONE MORE THING</Text>
+            <Text style={[styles.quizQuestionText, { textAlign: 'center', marginLeft: 0 }]}>How to Play</Text>
             {howToPlayCards()}
           </View>
           <PrimaryButton label="Got it" onPress={() => setOnboardingStep(11)} compact />
@@ -4215,26 +4218,28 @@ const styles = StyleSheet.create({
   capTextFull: { color: '#c1483f', fontWeight: '700' },
   capExceedsText: { fontSize: 12, color: '#c1483f', marginBottom: 6 },
   htpModalTitle: { fontSize: 20, fontWeight: '800', color: '#161410', marginBottom: 14 },
-  flipCardRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
-  flipCardWrap: { flex: 1, height: 168, borderRadius: 18 },
+  flipCardRow: { flexDirection: 'row', justifyContent: 'center', gap: 12 },
+  flipCardWrap: { width: 98, height: 136, borderRadius: 16 },
   flipCardTouchable: { flex: 1 },
   flipCardFace: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-    borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+    borderRadius: 16, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 10, backfaceVisibility: 'hidden',
-    shadowColor: '#161410', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.18, shadowRadius: 10, elevation: 3,
+    shadowColor: '#161410', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 2,
   },
-  flipCardBack: {},
+  flipCardIconWrap: {
+    width: 32, height: 32, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 8,
+  },
   flipCardFrontLabel: {
-    fontSize: 13, fontWeight: '800', color: '#faf9f6', letterSpacing: 1,
-    marginTop: 10, textAlign: 'center',
+    fontSize: 11.5, fontWeight: '800', letterSpacing: 0.8, textAlign: 'center',
   },
   flipCardTapHint: {
-    fontSize: 9.5, fontWeight: '600', color: 'rgba(250,249,246,0.65)',
-    marginTop: 6, textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.5,
+    fontSize: 8.5, fontWeight: '600', color: '#a39c8c',
+    marginTop: 5, textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.4,
   },
+  flipCardBackBar: { width: 22, height: 3, borderRadius: 2, marginBottom: 8 },
   flipCardBackText: {
-    fontSize: 11.5, fontWeight: '600', color: '#faf9f6', lineHeight: 15.5, textAlign: 'center',
+    fontSize: 11, fontWeight: '600', color: '#4a453a', lineHeight: 14.5, textAlign: 'center',
   },
   buyPriceMain: { fontSize: 22, fontWeight: '800', color: '#161410' },
   buyPriceSuffix: { fontSize: 13, fontWeight: '600', color: '#8a8578' },
