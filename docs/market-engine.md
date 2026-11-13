@@ -208,6 +208,18 @@ select vault.create_secret('YOUR_SERVICE_ROLE_KEY', 'service_role_key');
 
 ### 6. Schedule a run
 
+**Check the function's actual URL slug before wiring up the cron.**
+Supabase's dashboard shows a function by its display name, but routes
+requests by a separate slug — these can silently differ (ours did:
+displayed as `sync-sportmonks-players`, actually slugged `super-task`,
+which made every cron/pg_net call to `.../functions/v1/sync-sportmonks-players`
+404 for days while the dashboard's own "Test" button worked fine,
+since Test invokes by internal ID rather than the public URL). Confirm
+the real slug via the Management API (`GET /v1/projects/{ref}/functions`,
+needs a personal access token) or by testing the invoke URL directly
+with `curl` before scheduling anything against it — don't assume the
+display name is the slug.
+
 Because each call only processes `TEAM_BUDGET` (15) teams, a run once a
 day would take roughly a week to complete one full pass across ~106
 teams. Schedule it hourly instead — at 15 teams/call that's a full pass
@@ -219,12 +231,15 @@ select cron.schedule(
   '0 * * * *', -- hourly
   $$
   select net.http_post(
-    url := 'https://eqflsykuoyuzbcixayjl.supabase.co/functions/v1/sync-sportmonks-players',
+    -- "super-task" is this function's real slug, not its display name
+    -- (sync-sportmonks-players) -- see the note above.
+    url := 'https://eqflsykuoyuzbcixayjl.supabase.co/functions/v1/super-task',
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
       'Authorization', 'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'service_role_key')
     ),
-    body := '{}'::jsonb
+    body := '{}'::jsonb,
+    timeout_milliseconds := 60000
   );
   $$
 );
