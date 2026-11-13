@@ -1602,7 +1602,10 @@ function AppInner() {
     const sharesPreview = player.current_price > 0 ? Math.max(0, amountNum - fee) / player.current_price : 0;
     const maxCash = Math.floor((cash || 0) * 100) / 100;
     const soldOut = !!buyCapStatus?.sold_out;
-    const canSubmit = amountNum > 0 && !actionBusy && !soldOut;
+    const remainingRoom = buyCapStatus ? Math.max(0, buyCapStatus.ceiling - buyCapStatus.market_cap) : null;
+    const exceedsRoom = remainingRoom !== null && !soldOut && amountNum > remainingRoom;
+    const canSubmit = amountNum > 0 && !actionBusy && !soldOut && !exceedsRoom;
+    const effectiveMax = remainingRoom !== null ? Math.min(maxCash, remainingRoom) : maxCash;
 
     function closeModal() {
       setBuyModalPlayer(null);
@@ -1662,7 +1665,7 @@ function AppInner() {
                       <Text style={[styles.capText, soldOut && styles.capTextFull]}>
                         {soldOut
                           ? 'Sold out — share ceiling reached'
-                          : `${formatSC(buyCapStatus.market_cap, 0)} / ${formatSC(buyCapStatus.ceiling, 0)} invested`}
+                          : `${formatSC(remainingRoom, 0)} available · ${formatSC(buyCapStatus.market_cap, 0)} / ${formatSC(buyCapStatus.ceiling, 0)} invested`}
                       </Text>
                     </View>
                   ) : null}
@@ -1674,16 +1677,16 @@ function AppInner() {
                         key={v}
                         label={v}
                         active={amountNum === v}
-                        disabled={v > maxCash}
+                        disabled={v > maxCash || v > effectiveMax}
                         onPress={() => setBuyAmount(String(v))}
                       />
                     ))}
                     <BuyChip
                       label="All In"
                       style={styles.buyChipMax}
-                      active={amountNum > 0 && amountNum === maxCash}
-                      disabled={maxCash < 5}
-                      onPress={() => setBuyAmount(String(maxCash))}
+                      active={amountNum > 0 && amountNum === effectiveMax}
+                      disabled={maxCash < 5 || effectiveMax < 5}
+                      onPress={() => setBuyAmount(String(effectiveMax))}
                     />
                   </View>
 
@@ -1699,7 +1702,11 @@ function AppInner() {
                     <Text style={styles.buyCustomInputSuffix}>SC</Text>
                   </View>
 
-                  {amountNum > 0 ? (
+                  {exceedsRoom ? (
+                    <Text style={styles.capExceedsText}>
+                      Only {formatSC(remainingRoom, 0)} of room left on this player — lower your amount.
+                    </Text>
+                  ) : amountNum > 0 ? (
                     <View style={styles.buyPreviewRow}>
                       <Text style={styles.buyPreviewText}>≈ {sharesPreview.toFixed(2)} shares</Text>
                       <Text style={styles.buyPreviewText}>Fee {fee.toFixed(2)} SC</Text>
@@ -1719,7 +1726,7 @@ function AppInner() {
                       disabled={!canSubmit}
                     >
                       <Text style={styles.promptSubmitText}>
-                        {soldOut ? 'Sold Out' : actionBusy ? 'Investing…' : 'Invest'}
+                        {soldOut ? 'Sold Out' : exceedsRoom ? 'Too Much' : actionBusy ? 'Investing…' : 'Invest'}
                       </Text>
                     </PressScale>
                   </View>
@@ -4084,6 +4091,7 @@ const styles = StyleSheet.create({
   capBarFillFull: { backgroundColor: '#c1483f' },
   capText: { fontSize: 11.5, color: '#918c81' },
   capTextFull: { color: '#c1483f', fontWeight: '700' },
+  capExceedsText: { fontSize: 12, color: '#c1483f', marginBottom: 6 },
   buyPriceMain: { fontSize: 22, fontWeight: '800', color: '#161410' },
   buyPriceSuffix: { fontSize: 13, fontWeight: '600', color: '#8a8578' },
   buyAmountLabel: { fontSize: 12, fontWeight: '700', color: '#918c81', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
