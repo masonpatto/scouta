@@ -2303,9 +2303,9 @@ function AppInner() {
   // state and Animated.Value per card), used as a JSX tag for that
   // reason -- never called as a plain function like this one.
   const FLIP_CARD_DATA = [
-    { color: '#c9922e', bg: '#faf3e3', icon: 'search', frontLabel: 'SCOUT', backText: 'Ratings & prices move with real performances.' },
-    { color: '#2f8f5b', bg: '#e9f5ef', icon: 'trending-up', frontLabel: 'INVEST', backText: 'Back anyone you believe in. Your call, your style.' },
-    { color: '#7a5aa0', bg: '#f1ecf7', icon: 'award', frontLabel: 'COMPETE', backText: 'Climb the board. Prove you’ve got the eye.' },
+    { color: '#c9922e', bg: '#faf3e3', icon: 'search', frontLabel: 'SCOUT', backText: 'Browse real footballers. Ratings move with real match performance — never fixed.' },
+    { color: '#2f8f5b', bg: '#e9f5ef', icon: 'trending-up', frontLabel: 'INVEST', backText: 'Buy a stake with your Scout Coins. Sell anytime to lock in your profit.' },
+    { color: '#7a5aa0', bg: '#f1ecf7', icon: 'award', frontLabel: 'COMPETE', backText: 'Your portfolio value ranks you on the leaderboard. Outscout your friends.' },
   ];
 
   function howToPlayCards() {
@@ -4219,7 +4219,7 @@ const styles = StyleSheet.create({
   capExceedsText: { fontSize: 12, color: '#c1483f', marginBottom: 6 },
   htpModalTitle: { fontSize: 20, fontWeight: '800', color: '#161410', marginBottom: 14 },
   flipCardRow: { flexDirection: 'row', justifyContent: 'center', gap: 12 },
-  flipCardWrap: { width: 98, height: 136, borderRadius: 16 },
+  flipCardWrap: { width: 106, height: 172, borderRadius: 16 },
   flipCardTouchable: { flex: 1 },
   flipCardFace: {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
