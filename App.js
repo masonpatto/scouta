@@ -357,10 +357,10 @@ const QUIZ_QUESTIONS = [
     kicker: 'QUICK ONE', counter: '01',
     question: 'What draws you to scouting?',
     options: [
-      { text: 'Finding someone before anyone else has', trait: 'contrarian' },
-      { text: 'Working out why a player is good, not just that they are', trait: 'analytical' },
-      { text: 'Backing young talent early', trait: 'spotter' },
-      { text: 'The thrill of being right', trait: 'instinct' },
+      { text: 'Finding hidden gems before they become widely recognised', trait: 'contrarian' },
+      { text: 'Understanding what makes a player genuinely special', trait: 'analytical' },
+      { text: "Spotting potential and following a player's development", trait: 'spotter' },
+      { text: 'Proving my football instincts right', trait: 'instinct' },
     ],
   },
   {
