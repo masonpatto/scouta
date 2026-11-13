@@ -8,6 +8,23 @@ import * as Font from 'expo-font';
 import * as SecureStore from 'expo-secure-store';
 import { Feather } from '@expo/vector-icons';
 import Svg, { Circle, Defs, LinearGradient, RadialGradient, Rect, Stop } from 'react-native-svg';
+import * as Sentry from '@sentry/react-native';
+
+// Error monitoring. The DSN is a public, write-only ingest endpoint --
+// safe to ship in client code, same as the Supabase anon key below
+// (both are meant to be embedded; Supabase's RLS policies and
+// Sentry's own project settings are what actually keep each one safe
+// to expose). Sentry.init must run before anything else so it can
+// catch errors that happen during module load, not just after the
+// app renders.
+Sentry.init({
+  dsn: 'https://49b6da4002daff27504530595562da58@o4512421663014912.ingest.de.sentry.io/4512421671731280',
+  // Keep this low: a free-tier hobby project doesn't need every
+  // render traced, just errors -- tracing the session replay/perf
+  // features isn't worth the extra event volume against the 5k/month
+  // free quota.
+  tracesSampleRate: 0,
+});
 
 // ---------- Talking to Supabase Auth directly via fetch, no SDK needed ----------
 const SUPABASE_URL = 'https://eqflsykuoyuzbcixayjl.supabase.co';
@@ -3565,7 +3582,7 @@ function AppInner() {
   );
 }
 
-export default function App() {
+function App() {
   return (
     <View style={styles.webRoot}>
       <WebFrame>
@@ -3574,6 +3591,11 @@ export default function App() {
     </View>
   );
 }
+
+// Sentry.wrap reports any render error Sentry's own error boundary
+// catches, in addition to the unhandled JS errors/promise rejections
+// Sentry.init already captures globally.
+export default Sentry.wrap(App);
 
 const styles = StyleSheet.create({
   // ---------- Web presentation: outer root, centred desktop "app card"
