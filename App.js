@@ -605,8 +605,11 @@ function BuySuccessView({ info, onDone, onViewPortfolio }) {
   const opacityAnim = useRef(new Animated.Value(0)).current;
   const sweep = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(1)).current;
+  const bonusScale = useRef(new Animated.Value(0.5)).current;
+  const bonusOpacity = useRef(new Animated.Value(0)).current;
   const [displayShares, setDisplayShares] = useState(0);
   const [displayAmount, setDisplayAmount] = useState(0);
+  const [displayBonus, setDisplayBonus] = useState(0);
 
   useEffect(() => {
     Animated.spring(scaleAnim, { toValue: 1, friction: 6, tension: 80, useNativeDriver: true }).start(() => {
@@ -621,6 +624,19 @@ function BuySuccessView({ info, onDone, onViewPortfolio }) {
       ).start();
     });
     Animated.timing(opacityAnim, { toValue: 1, duration: 220, useNativeDriver: true }).start();
+
+    // The bonus banner pops in a beat AFTER the main badge settles --
+    // reads as "oh, and ALSO this" rather than competing with it for
+    // attention in the same instant.
+    if (info.firstMissionBonus) {
+      Animated.sequence([
+        Animated.delay(350),
+        Animated.parallel([
+          Animated.spring(bonusScale, { toValue: 1, friction: 5, tension: 120, useNativeDriver: true }),
+          Animated.timing(bonusOpacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+        ]),
+      ]).start();
+    }
 
     const sweepLoop = Animated.loop(
       Animated.sequence([
@@ -641,6 +657,7 @@ function BuySuccessView({ info, onDone, onViewPortfolio }) {
       const eased = 1 - Math.pow(1 - t, 3);
       setDisplayShares(info.shares * eased);
       setDisplayAmount(info.amount * eased);
+      if (info.firstMissionBonus) setDisplayBonus(2500 * eased);
       if (t < 1) raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -655,6 +672,18 @@ function BuySuccessView({ info, onDone, onViewPortfolio }) {
 
   return (
     <Animated.View style={{ opacity: opacityAnim, transform: [{ scale: scaleAnim }] }}>
+      {info.firstMissionBonus ? (
+        <Animated.View
+          style={[
+            styles.missionBonusBanner,
+            { opacity: bonusOpacity, transform: [{ scale: bonusScale }] },
+          ]}
+        >
+          <Text style={styles.missionBonusEyebrow}>🎉 FIRST MISSION COMPLETE</Text>
+          <Text style={styles.missionBonusAmount}>+{Math.round(displayBonus).toLocaleString()} SC</Text>
+          <Text style={styles.missionBonusSub}>Bonus for making your first move</Text>
+        </Animated.View>
+      ) : null}
       <View style={styles.buySuccessBadgeWrap}>
         <Animated.View style={[styles.buySuccessBadge, { transform: [{ scale: pulse }] }]}>
           <Animated.View
@@ -2237,8 +2266,8 @@ function AppInner() {
       } else {
         const fee = Math.round(amount * 0.02 * 100) / 100;
         const shares = player.current_price > 0 ? Math.max(0, amount - fee) / player.current_price : 0;
-        setBuySuccessInfo({ playerName: player.name, amount, shares });
-        logEvent('buy_player', { player_id: player.id, amount });
+        setBuySuccessInfo({ playerName: player.name, amount, shares, firstMissionBonus: !!result.first_mission_bonus });
+        logEvent('buy_player', { player_id: player.id, amount, first_mission_bonus: !!result.first_mission_bonus });
         await Promise.all([fetchCash(), fetchHoldings(), fetchTransactions()]);
       }
     } catch (e) {
@@ -4268,6 +4297,20 @@ const styles = StyleSheet.create({
   buyPreviewRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
   buyPreviewText: { fontSize: 12.5, color: '#57534a' },
   buyAvailableText: { fontSize: 12, color: '#918c81', marginBottom: 16 },
+  missionBonusBanner: {
+    backgroundColor: '#161410', borderRadius: 18, paddingVertical: 16, paddingHorizontal: 18,
+    alignItems: 'center', marginBottom: 18,
+    shadowColor: '#c9a227', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 18, elevation: 5,
+  },
+  missionBonusEyebrow: {
+    fontSize: 11, fontWeight: '700', color: '#eec98a', letterSpacing: 1,
+    textTransform: 'uppercase', marginBottom: 6,
+  },
+  missionBonusAmount: {
+    fontSize: 30, fontWeight: '800', color: '#faf9f6', letterSpacing: -0.5,
+    fontVariant: ['tabular-nums'], marginBottom: 4,
+  },
+  missionBonusSub: { fontSize: 12, color: 'rgba(250,249,246,0.65)' },
   buySuccessBadgeWrap: { alignItems: 'center', marginTop: 4, marginBottom: 18 },
   buySuccessBadge: {
     width: 72, height: 72, borderRadius: 36, backgroundColor: '#161410',
