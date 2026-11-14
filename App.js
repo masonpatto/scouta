@@ -77,9 +77,6 @@ const IDENTITY_BADGE_BG_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAARg
 // fixed decorative circle regardless of score.
 const TIER_BADGE_BG_URI = 'data:image/png;base64,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';
 
-// Real Apple logo glyph, replacing the emoji fallback.
-const APPLE_LOGO_URI = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAABf0lEQVR4nJWUsS5EURCG/7l3SayCkC1sLxKlTkOlo6LRKXkCrVKjUCj0HsBDiIQIlUJBFLIKiShkg929n2Ln7A6WtZOcnLlnZv4z/8ydIw0gwAxQcd0GCTQgA4aAfeANWHRb/h+ADMiBkn/v0JZHYMztv2eUMvh2VnGQZ2A+nH/JyCKImeH6tKQJSTeS6pI2JZ1LakgqS7oys9eeVHyfAo6B90DlENgF7ujKPbDh9LPvBS0Dl8G54KcUQMP1a2C0U69Q0C13eA8gKbDhesv3B6Aa2WSScIYrkgpJeaidSSr5MrebpAMzqwElMysSUOFBk/79lyT7mbefaEi31/uAKAQOe1yn61m45dYd0e+SbMtOqesbir3uBW726FbsWov2qCx5XJ6AzPdx4MkdW33ACuADWMV/n8zMAHIze5G051RbgUrTVzxD0oukU58GOlnRnfKTf1AEWPtCLdQqjUkVuHDnGnBE+wk5cTp1YLsnSABL9RoBFvBHLNjngNl4cZJPSyknDpqLriEAAAAASUVORK5CYII=';
-
 // Dark-lined guilloche texture for the redesigned light/cream player
 // card -- the original guilloche is white lines, invisible on a light
 // background, so this is a proper dark variant instead.
@@ -2929,21 +2926,6 @@ function AppInner() {
                 </View>
               </View>
               <View>
-                <TouchableOpacity
-                  style={styles.appleButton}
-                  onPress={() => Alert.alert(
-                    'Apple Sign-In',
-                    'Real Apple Sign-In needs a native module (expo-apple-authentication) that isn\'t available in Snack\'s mobile editor. Use email/password below for now.'
-                  )}
-                >
-                  <Image source={{ uri: APPLE_LOGO_URI }} style={styles.appleButtonIcon} />
-                  <Text style={styles.appleButtonText}>Sign up with Apple</Text>
-                </TouchableOpacity>
-                <View style={styles.dividerRow}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>OR</Text>
-                  <View style={styles.dividerLine} />
-                </View>
                 <TextInput
                   style={styles.heroInput}
                   placeholder="Email"
@@ -4497,15 +4479,6 @@ const styles = StyleSheet.create({
   },
   identityRecapBg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 16 },
   identityRecapIcon: { fontSize: 20 },
-  appleButton: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#000000', borderRadius: 16, padding: 16, marginBottom: 16, marginHorizontal: 14,
-  },
-  appleButtonIcon: { width: 16, height: 16 },
-  appleButtonText: { color: '#ffffff', fontSize: 14.5, fontWeight: '700' },
-  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16, marginHorizontal: 14 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#e8e3d8' },
-  dividerText: { fontSize: 11.5, color: '#8a8578', fontWeight: '600' },
   identityRecapLabel: { fontSize: 11, color: '#918c81', fontWeight: '600', marginBottom: 2 },
   identityRecapName: { fontSize: 15, fontWeight: '800', color: '#161410' },
   heroButton: {
